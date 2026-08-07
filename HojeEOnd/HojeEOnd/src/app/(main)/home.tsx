@@ -11,7 +11,7 @@ import { SearchBar } from "@/components/home/SearchBar";
 import { CategoryChip } from "@/components/home/CategoryChip";
 import { EventCard } from "@/components/home/EventCard";
 import { VenueCard } from "@/components/home/VenueCard";
-import { LiveMap } from "@/components/home/LiveMap.native";
+import { LiveMapContainer } from "@/components/home/LiveMapContainer";
 import { FloatingButton } from "@/components/home/FloatingButton";
 
 export default function HomeScreen() {
@@ -95,7 +95,7 @@ export default function HomeScreen() {
       </Text>
 
 
-      <LiveMap />
+      <LiveMapContainer />
 
 
     </ScrollView>

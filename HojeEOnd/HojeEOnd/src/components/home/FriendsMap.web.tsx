@@ -1,45 +1,24 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-} from "react-native";
-
+import React from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 export function FriendsMap() {
-
   return (
-
     <View style={styles.container}>
-
       <Text style={styles.text}>
-        Mapa disponível no aplicativo mobile
+        Mapa de amigos disponível no aplicativo mobile
       </Text>
-
     </View>
-
   );
-
 }
 
-
-
 const styles = StyleSheet.create({
-
   container: {
-
-    flex:1,
-
-    justifyContent:"center",
-
-    alignItems:"center",
-
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
-
 
   text: {
-
-    fontSize:18,
-
+    fontSize: 18,
   },
-
 });

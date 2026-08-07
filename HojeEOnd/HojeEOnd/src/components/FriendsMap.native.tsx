@@ -1,370 +1,45 @@
-import {
-  useEffect,
-  useState,
-} from "react";
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import MapView, { Marker } from "react-native-maps";
 
-import {
-  View,
-  StyleSheet,
-  Text,
-} from "react-native";
+import { friends } from "@/data/friends";
 
-
-import MapView, {
-  Marker,
-  Region,
-} from "react-native-maps";
-
-
-import {
-  friends,
-} from "@/data/friends";
-
-
-import {
-  useLocationStore,
-} from "@/store/location-store";
-
-
-import {
-  usePresenceStore,
-} from "@/store/presence-store";
-
-
-import {
-  calculateDistance,
-} from "@/utils/distance";
-
-
-
-export default function FriendsMap() {
-
-
-  const {
-    latitude,
-    longitude,
-  } = useLocationStore();
-
-
-
-  const {
-    visible,
-  } = usePresenceStore();
-
-
-
-  const [region, setRegion] =
-    useState<Region | null>(null);
-
-
-
-
-
-  useEffect(() => {
-
-
-    if(
-
-      latitude !== null &&
-
-      longitude !== null
-
-    ){
-
-
-      setRegion({
-
-        latitude,
-
-        longitude,
-
-        latitudeDelta:0.01,
-
-        longitudeDelta:0.01,
-
-      });
-
-
-    }
-
-
-  },[
-
-    latitude,
-
-    longitude
-
-  ]);
-
-
-
-
-
-
-  if(
-
-    region === null ||
-
-    latitude === null ||
-
-    longitude === null
-
-  ){
-
-
-    return (
-
-      <View style={styles.loading}>
-
-
-        <Text style={styles.loadingText}>
-
-          Aguardando localização...
-
-        </Text>
-
-
-      </View>
-
-    );
-
-  }
-
-
-
-
-
-
-
+export function FriendsMap() {
   return (
+    <View style={styles.container}>
+      <MapView
+        style={styles.map}
+        initialRegion={{
+          latitude: -23.5505,
+          longitude: -46.6333,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }}
+      >
 
-
-    <MapView
-
-
-      style={styles.map}
-
-
-      region={region}
-
-
-      showsUserLocation
-
-
-      showsMyLocationButton
-
-
-    >
-
-
-
-
-      {
-        visible && (
-
-
+        {friends.map((friend, index) => (
           <Marker
-
-
+            key={friend.id}
             coordinate={{
-
-
-              latitude,
-
-              longitude,
-
-
+              latitude: -23.5505 + index * 0.001,
+              longitude: -46.6333 + index * 0.001,
             }}
-
-
-
-            title="Você"
-
-
-            description="Sua localização atual"
-
-
-
+            title={friend.name}
           />
+        ))}
 
-
-        )
-
-      }
-
-
-
-
-
-
-
-
-      {
-
-        friends.map(friend => {
-
-
-          const friendLatitude =
-
-            latitude +
-
-            Number(friend.id) *
-
-            0.001;
-
-
-
-
-
-          const friendLongitude =
-
-            longitude +
-
-            Number(friend.id) *
-
-            0.001;
-
-
-
-
-
-
-          const distance =
-
-            calculateDistance(
-
-
-              latitude,
-
-
-              longitude,
-
-
-              friendLatitude,
-
-
-              friendLongitude
-
-
-            );
-
-
-
-
-
-
-
-          return (
-
-
-
-            <Marker
-
-
-              key={friend.id}
-
-
-
-              coordinate={{
-
-
-                latitude:
-                friendLatitude,
-
-
-                longitude:
-                friendLongitude,
-
-
-              }}
-
-
-
-              title={friend.name}
-
-
-
-              description={
-
-                `${distance} metros de você`
-
-              }
-
-
-
-            />
-
-
-          );
-
-
-
-        })
-
-      }
-
-
-
-
-    </MapView>
-
-
+      </MapView>
+    </View>
   );
-
 }
 
 
-
-
-
 const styles = StyleSheet.create({
-
-
-
-  map:{
-
-
-    flex:1,
-
-
+  container: {
+    flex: 1,
   },
 
-
-
-
-
-  loading:{
-
-
-    flex:1,
-
-
-    backgroundColor:"#090909",
-
-
-    justifyContent:"center",
-
-
-    alignItems:"center",
-
-
+  map: {
+    flex: 1,
   },
-
-
-
-
-
-  loadingText:{
-
-
-    color:"#FFFFFF",
-
-
-    fontSize:18,
-
-
-  },
-
-
-
 });

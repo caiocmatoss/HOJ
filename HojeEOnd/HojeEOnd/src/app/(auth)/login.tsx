@@ -1,25 +1,58 @@
 import {
-  View,
-  Text,
-  TextInput,
   Pressable,
   StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
-import { useState } from "react";
 import { router } from "expo-router";
+import { useState } from "react";
 
 
 export default function LoginScreen() {
 const [email, setEmail] = useState("");
 const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!email.trim()) {
+      newErrors.email = "Email é obrigatório";
+    } else if (!/^\S+@\S+\.\S+$/.test(email)) {
+      newErrors.email = "Email inválido";
+    }
+
+    if (!password) {
+      newErrors.password = "Senha é obrigatória";
+    } else if (password.length < 6) {
+      newErrors.password = "Senha deve ter pelo menos 6 caracteres";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleLogin = () => {
+    if (loading || validateForm()) {
+      setLoading(true);
+
+      // Simular autenticação
+      setTimeout(() => {
+        setLoading(false);
+  router.replace("/(main)/home");
+      }, 1500);
+    }
+  };
+
   return (
 
     <View style={styles.container}>
-
       <Text style={styles.title}>
         HOJÉ OND
-      </Text>
+        </Text>
 
 
       <Text style={styles.subtitle}>
@@ -28,43 +61,36 @@ const [password, setPassword] = useState("");
 
 
      <TextInput
- style={styles.input}
- placeholder="Email"
- placeholderTextColor="#777"
- value={email}
- onChangeText={setEmail}
-/>
+      style={[styles.input, errors.email && styles.inputError]}
+      placeholder="Email"
+      placeholderTextColor="#777"
+      value={email}
+      onChangeText={setEmail}
+      keyboardType="email-address"
+    />
+
+
+      {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
 
 
       <TextInput
- style={styles.input}
- placeholder="Senha"
- placeholderTextColor="#777"
- secureTextEntry
- value={password}
- onChangeText={setPassword}
-/>
+        style={[styles.input, errors.password && styles.inputError]}
+        placeholder="Senha"
+        placeholderTextColor="#777"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
 
-
+      {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
       <Pressable
-        style={styles.button}
-        onPress={() => {
-
-  if(!email || !password){
-
-    alert("Digite email e senha");
-
-    return;
-  }
-
-
-  router.replace("/(main)/home");
-
-}}
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleLogin}
+        disabled={loading}
       >
 
         <Text style={styles.buttonText}>
-          Entrar
+          {loading ? "Entrando..." : "Entrar"}
         </Text>
 
       </Pressable>
@@ -122,6 +148,11 @@ const styles = StyleSheet.create({
     marginBottom:15,
   },
 
+  inputError: {
+    borderColor: "#D50000",
+    borderWidth: 1,
+  },
+
 
   button:{
     width:"100%",
@@ -129,6 +160,10 @@ const styles = StyleSheet.create({
     padding:18,
     borderRadius:14,
     marginTop:10,
+  },
+
+  buttonDisabled: {
+    backgroundColor: "#777",
   },
 
 
@@ -144,6 +179,13 @@ const styles = StyleSheet.create({
     color:"#FFC400",
     marginTop:25,
     fontSize:16,
+  },
+
+  errorText: {
+    color: "#D50000",
+    fontSize: 14,
+    marginBottom: 8,
+    marginLeft: 8,
   },
 
 });

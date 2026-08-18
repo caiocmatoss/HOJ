@@ -1,20 +1,20 @@
 import {
-  Text,
   Pressable,
-  StyleSheet
+  StyleSheet,
+  Text
 } from "react-native";
 
-
 interface Props {
-  title:string;
-  active?:boolean;
+  title: string;
+  active?: boolean;
+  onPress?: () => void;
 }
-
 
 export function CategoryChip({
   title,
-  active=false
-}:Props){
+  active = false,
+  onPress = () => {}
+}: Props){
 
  return (
 
@@ -23,6 +23,7 @@ export function CategoryChip({
       styles.container,
       active && styles.active
     ]}
+    onPress={onPress}
   >
 
     <Text
@@ -40,8 +41,6 @@ export function CategoryChip({
 
 }
 
-
-
 const styles = StyleSheet.create({
 
  container:{
@@ -52,17 +51,14 @@ const styles = StyleSheet.create({
   marginRight:10,
  },
 
-
  active:{
   backgroundColor:"#FFC400",
  },
-
 
  text:{
   color:"#FFF",
   fontSize:14,
  },
-
 
  activeText:{
   color:"#000",
@@ -70,3 +66,51 @@ const styles = StyleSheet.create({
  }
 
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

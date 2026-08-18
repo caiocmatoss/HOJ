@@ -1,11 +1,18 @@
 import {
- View,
- TextInput,
- StyleSheet
+    StyleSheet,
+    TextInput,
+    View
 } from "react-native";
 
+interface SearchBarProps {
+  value?: string;
+  onChangeText?: (text: string) => void;
+}
 
-export function SearchBar(){
+export function SearchBar({ 
+  value = "", 
+  onChangeText = () => {} 
+}: SearchBarProps){
 
  return (
 
@@ -15,6 +22,8 @@ export function SearchBar(){
     placeholder="Buscar eventos, bares..."
     placeholderTextColor="#777"
     style={styles.input}
+    value={value}
+    onChangeText={onChangeText}
    />
 
   </View>
@@ -23,13 +32,11 @@ export function SearchBar(){
 
 }
 
-
 const styles=StyleSheet.create({
 
  container:{
   marginTop:20,
  },
-
 
  input:{
   backgroundColor:"#1B1B1B",
@@ -37,6 +44,7 @@ const styles=StyleSheet.create({
   padding:16,
   borderRadius:18,
   fontSize:16,
+  height: 50
  }
 
 });

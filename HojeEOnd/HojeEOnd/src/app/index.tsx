@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, Pressable } from "react-native";
 import { useRouter } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 
 export default function HomeScreen() {
@@ -23,7 +23,7 @@ export default function HomeScreen() {
       <Pressable
   style={styles.button}
   onPress={() => {
-  window.location.href = "/login";
+  router.replace("/(auth)/login");
 }}
 >
   <Text style={styles.buttonText}>
@@ -33,7 +33,7 @@ export default function HomeScreen() {
 
       <Pressable
         style={styles.buttonOutline}
-        onPress={() => router.replace("/(auth)/login")}
+        onPress={() => router.replace("/(auth)/register")}
       >
 
         <Text style={styles.buttonOutlineText}>

@@ -1,15 +1,63 @@
 import {
-  View,
-  Text,
-  TextInput,
   Pressable,
   StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { router } from "expo-router";
+import { useState } from "react";
 
 
 export default function RegisterScreen() {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!name.trim()) {
+      newErrors.name = "Nome é obrigatório";
+    }
+
+    if (!email.trim()) {
+      newErrors.email = "Email é obrigatório";
+    } else if (!/^\S+@\S+\.\S+$/.test(email)) {
+      newErrors.email = "Email inválido";
+    }
+
+    if (!password) {
+      newErrors.password = "Senha é obrigatória";
+    } else if (password.length < 6) {
+      newErrors.password = "Senha deve ter pelo menos 6 caracteres";
+    }
+
+    if (!confirmPassword) {
+      newErrors.confirmPassword = "Confirmação de senha é obrigatória";
+    } else if (password !== confirmPassword) {
+      newErrors.confirmPassword = "Senhas não coincidem";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleRegister = () => {
+    if (loading || validateForm()) {
+      setLoading(true);
+
+      // Simular criação de conta
+      setTimeout(() => {
+        setLoading(false);
+        router.replace("/(main)/home");
+      }, 1500);
+    }
+  };
 
   return (
 
@@ -26,32 +74,60 @@ export default function RegisterScreen() {
 
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, errors.name && styles.inputError]}
         placeholder="Nome"
         placeholderTextColor="#777"
+        value={name}
+        onChangeText={setName}
       />
+
+      {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
 
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, errors.email && styles.inputError]}
         placeholder="Email"
         placeholderTextColor="#777"
         keyboardType="email-address"
+        value={email}
+        onChangeText={setEmail}
       />
+
+      {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
 
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, errors.password && styles.inputError]}
         placeholder="Senha"
         placeholderTextColor="#777"
         secureTextEntry
+        value={password}
+        onChangeText={setPassword}
       />
 
+      {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
-      <Pressable style={styles.button}>
+
+      <TextInput
+        style={[styles.input, errors.confirmPassword && styles.inputError]}
+        placeholder="Confirmar Senha"
+        placeholderTextColor="#777"
+        secureTextEntry
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+      />
+
+      {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword}</Text>}
+
+
+      <Pressable
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleRegister}
+        disabled={loading}
+      >
 
         <Text style={styles.buttonText}>
-          Criar Conta
+          {loading ? "Criando conta..." : "Criar Conta"}
         </Text>
 
       </Pressable>
@@ -111,12 +187,21 @@ const styles = StyleSheet.create({
     fontSize:16,
   },
 
+  inputError: {
+    borderColor: "#D50000",
+    borderWidth: 1,
+  },
+
 
   button:{
     backgroundColor:"#FFC400",
     padding:18,
     borderRadius:14,
     marginTop:10,
+  },
+
+  buttonDisabled: {
+    backgroundColor: "#777",
   },
 
 
@@ -133,6 +218,13 @@ const styles = StyleSheet.create({
     textAlign:"center",
     marginTop:25,
     fontSize:16,
+  },
+
+  errorText: {
+    color: "#D50000",
+    fontSize: 14,
+    marginBottom: 8,
+    marginLeft: 8,
   }
 
 });

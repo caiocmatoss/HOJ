@@ -12,20 +12,30 @@ import {
   useLocalSearchParams,
 } from "expo-router";
 
+import { ScreenContainer } from "@/components/ui/ScreenContainer";
+
 import { venues } from "@/data/venues";
+
 import { useCheckinStore } from "@/store/checkin-store";
 import { useFavoriteStore } from "@/store/favorite-store";
 
 export default function VenueDetailsScreen() {
-  const { id } = useLocalSearchParams<{
-    id?: string | string[];
-  }>();
+  const { id } =
+    useLocalSearchParams<{
+      id?: string | string[];
+    }>();
 
-  const {
-    isFavorite,
-    addFavorite,
-    removeFavorite,
-  } = useFavoriteStore();
+  const favorites =
+  useFavoriteStore(
+    (state) =>
+      state.favorites,
+  );
+
+const toggleFavorite =
+  useFavoriteStore(
+    (state) =>
+      state.toggleFavorite,
+  );
 
   const {
     currentVenue,
@@ -33,53 +43,103 @@ export default function VenueDetailsScreen() {
     checkout,
   } = useCheckinStore();
 
-  const venueId = Array.isArray(id)
-    ? id[0]
-    : id;
+  const venueId =
+    Array.isArray(id)
+      ? id[0]
+      : id;
+
+  const handleBack = () => {
+    router.back();
+  };
 
   if (!venueId) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>
-          Local não encontrado
-        </Text>
+      <View style={styles.errorScreen}>
+        <ScreenContainer maxWidth={760}>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorIcon}>
+              📍
+            </Text>
 
-        <Pressable
-          style={styles.errorButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.errorButtonText}>
-            Voltar
-          </Text>
-        </Pressable>
+            <Text style={styles.errorTitle}>
+              Local não encontrado
+            </Text>
+
+            <Text style={styles.errorText}>
+              Não foi possível identificar este local.
+            </Text>
+
+            <Pressable
+              onPress={handleBack}
+              style={({ pressed }) => [
+                styles.errorButton,
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={
+                  styles.errorButtonText
+                }
+              >
+                Voltar
+              </Text>
+            </Pressable>
+          </View>
+        </ScreenContainer>
       </View>
     );
   }
 
   const venue = venues.find(
-    (item) => item.id === venueId,
+    (item) =>
+      item.id === venueId,
   );
 
   if (!venue) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>
-          Local não encontrado
-        </Text>
+      <View style={styles.errorScreen}>
+        <ScreenContainer maxWidth={760}>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorIcon}>
+              📍
+            </Text>
 
-        <Pressable
-          style={styles.errorButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.errorButtonText}>
-            Voltar
-          </Text>
-        </Pressable>
+            <Text style={styles.errorTitle}>
+              Local não encontrado
+            </Text>
+
+            <Text style={styles.errorText}>
+              Este local pode ter sido removido ou
+              não está mais disponível.
+            </Text>
+
+            <Pressable
+              onPress={handleBack}
+              style={({ pressed }) => [
+                styles.errorButton,
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={
+                  styles.errorButtonText
+                }
+              >
+                Voltar
+              </Text>
+            </Pressable>
+          </View>
+        </ScreenContainer>
       </View>
     );
   }
 
-  const favorite = isFavorite(venueId);
+  const favorite =
+  favorites.includes(
+    venueId,
+  );
 
   const isCurrentlyCheckedIn =
     currentVenue === venueId;
@@ -88,290 +148,436 @@ export default function VenueDetailsScreen() {
     venue.status === "open";
 
   const handleFavorite = () => {
-    if (favorite) {
-      removeFavorite(venueId);
-    } else {
-      addFavorite(venueId);
-    }
-  };
+  toggleFavorite(
+    venueId,
+  );
+};
 
   const handleCheckin = () => {
-    if (isCurrentlyCheckedIn) {
+    if (
+      isCurrentlyCheckedIn
+    ) {
       checkout();
+
       return;
     }
 
-    checkin(venueId);
+    checkin(
+      venueId,
+    );
+  };
+
+  const handleOpenGroups = () => {
+    router.push(
+      "/(main)/groups",
+    );
   };
 
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
+      contentContainerStyle={
+        styles.scrollContent
+      }
+      showsVerticalScrollIndicator={
+        false
+      }
     >
-      <Pressable
-        style={({ pressed }) => [
-          styles.backButtonTop,
-          pressed && styles.pressed,
-        ]}
-        onPress={() => router.back()}
-      >
-        <Text style={styles.backButtonTopText}>
-          ← Voltar
-        </Text>
-      </Pressable>
+      <ScreenContainer maxWidth={900}>
+        <View style={styles.content}>
+          <Pressable
+            onPress={handleBack}
+            style={({ pressed }) => [
+              styles.backButtonTop,
 
-      <Image
-        source={{ uri: venue.image }}
-        style={styles.heroImage}
-        resizeMode="cover"
-      />
-
-      <View style={styles.headerRow}>
-        <View style={styles.headerInfo}>
-          <Text style={styles.title}>
-            {venue.name}
-          </Text>
-
-          <Text style={styles.category}>
-            {venue.category}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.statusBadge,
-            isOpen
-              ? styles.statusOpen
-              : styles.statusClosed,
-          ]}
-        >
-          <Text
-            style={[
-              styles.statusText,
-              isOpen
-                ? styles.statusOpenText
-                : styles.statusClosedText,
+              pressed &&
+                styles.pressed,
             ]}
           >
-            {isOpen
-              ? "Aberto"
-              : "Fechado"}
-          </Text>
-        </View>
-      </View>
+            <Text
+              style={
+                styles.backButtonTopText
+              }
+            >
+              ← Voltar
+            </Text>
+          </Pressable>
 
-      <View style={styles.actionRow}>
-        <Pressable
-          onPress={handleFavorite}
-          style={({ pressed }) => [
-            styles.actionButton,
-            favorite &&
-              styles.favoriteActive,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text
-            style={[
-              styles.actionIcon,
-              favorite &&
-                styles.favoriteIconActive,
-            ]}
-          >
-            {favorite ? "♥" : "♡"}
-          </Text>
+          <Image
+            source={{
+              uri: venue.image,
+            }}
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
 
-          <Text
-            style={[
-              styles.actionText,
-              favorite &&
-                styles.favoriteTextActive,
-            ]}
-          >
-            {favorite
-              ? "Favoritado"
-              : "Favoritar"}
-          </Text>
-        </Pressable>
+          <View style={styles.headerRow}>
+            <View style={styles.headerInfo}>
+              <Text style={styles.title}>
+                {venue.name}
+              </Text>
 
-        <Pressable
-          onPress={handleCheckin}
-          style={({ pressed }) => [
-            styles.actionButton,
-            isCurrentlyCheckedIn &&
-              styles.checkinActive,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.actionIcon}>
-            📍
-          </Text>
+              <Text style={styles.category}>
+                {venue.category}
+              </Text>
 
-          <Text
-            style={[
-              styles.actionText,
-              isCurrentlyCheckedIn &&
-                styles.checkinTextActive,
-            ]}
-          >
-            {isCurrentlyCheckedIn
-              ? "Você está aqui"
-              : "Check-in"}
-          </Text>
-        </Pressable>
-      </View>
+              <Text style={styles.address}>
+                📍 {venue.address}
+              </Text>
+            </View>
 
-      {isCurrentlyCheckedIn && (
-        <View style={styles.checkedInBanner}>
-          <Text style={styles.checkedInBannerText}>
-            ✓ Você está fazendo check-in neste local
-          </Text>
-        </View>
-      )}
+            <View
+              style={[
+                styles.statusBadge,
 
-      <View style={styles.statsCard}>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>
-            {venue.occupancy}
-          </Text>
+                isOpen
+                  ? styles.statusOpen
+                  : styles.statusClosed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusText,
 
-          <Text style={styles.statLabel}>
-            Ocupação
-          </Text>
-        </View>
+                  isOpen
+                    ? styles.statusOpenText
+                    : styles.statusClosedText,
+                ]}
+              >
+                {isOpen
+                  ? "Aberto"
+                  : "Fechado"}
+              </Text>
+            </View>
+          </View>
 
-        <View style={styles.statDivider} />
+          <View style={styles.actionRow}>
+            <Pressable
+              onPress={
+                handleFavorite
+              }
+              style={({ pressed }) => [
+                styles.actionButton,
 
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>
-            {venue.distance}
-          </Text>
+                favorite &&
+                  styles.favoriteActive,
 
-          <Text style={styles.statLabel}>
-            Distância
-          </Text>
-        </View>
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.actionIcon,
 
-        <View style={styles.statDivider} />
+                  favorite &&
+                    styles.favoriteIconActive,
+                ]}
+              >
+                {favorite
+                  ? "♥"
+                  : "♡"}
+              </Text>
 
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>
-            {venue.people}
-          </Text>
+              <Text
+                style={[
+                  styles.actionText,
 
-          <Text style={styles.statLabel}>
-            Pessoas
-          </Text>
-        </View>
-      </View>
+                  favorite &&
+                    styles.favoriteTextActive,
+                ]}
+              >
+                {favorite
+                  ? "Favoritado"
+                  : "Favoritar"}
+              </Text>
+            </Pressable>
 
-      <View style={styles.infoCard}>
-        <Text style={styles.sectionTitle}>
-          Informações
-        </Text>
+            <Pressable
+              onPress={
+                handleCheckin
+              }
+              style={({ pressed }) => [
+                styles.actionButton,
 
-        <InfoRow
-          icon="⭐"
-          label="Nota"
-          value={String(venue.rating)}
-        />
+                isCurrentlyCheckedIn &&
+                  styles.checkinActive,
 
-        <InfoRow
-          icon="📍"
-          label="Endereço"
-          value={venue.address}
-        />
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.actionIcon,
 
-        <InfoRow
-          icon="🚪"
-          label="Status"
-          value={
-            isOpen ? "Aberto" : "Fechado"
-          }
-        />
+                  isCurrentlyCheckedIn &&
+                    styles.checkinIconActive,
+                ]}
+              >
+                {isCurrentlyCheckedIn
+                  ? "✓"
+                  : "📍"}
+              </Text>
 
-        <InfoRow
-          icon="🎧"
-          label="DJ"
-          value={venue.dj}
-        />
+              <Text
+                style={[
+                  styles.actionText,
 
-        <InfoRow
-          icon="🎵"
-          label="Playlist"
-          value={venue.playlist}
-        />
+                  isCurrentlyCheckedIn &&
+                    styles.checkinTextActive,
+                ]}
+              >
+                {isCurrentlyCheckedIn
+                  ? "Você está aqui"
+                  : "Check-in"}
+              </Text>
+            </Pressable>
+          </View>
 
-        <InfoRow
-          icon="🎁"
-          label="Promoção"
-          value={venue.promotion}
-        />
-      </View>
+          {isCurrentlyCheckedIn && (
+            <View
+              style={
+                styles.checkedInBanner
+              }
+            >
+              <Text
+                style={
+                  styles.checkedInBannerText
+                }
+              >
+                ✓ Você está fazendo check-in neste
+                local
+              </Text>
+            </View>
+          )}
 
-      <View style={styles.descriptionCard}>
-        <Text style={styles.sectionTitle}>
-          Sobre o local
-        </Text>
+          <View style={styles.statsCard}>
+            <View style={styles.statItem}>
+              <Text
+                style={
+                  styles.statValue
+                }
+              >
+                {venue.occupancy}
+              </Text>
 
-        <Text style={styles.description}>
-          {venue.description}
-        </Text>
-      </View>
+              <Text
+                style={
+                  styles.statLabel
+                }
+              >
+                Ocupação
+              </Text>
+            </View>
 
-      {venue.gallery.length > 0 && (
-        <View style={styles.gallerySection}>
-          <Text style={styles.sectionTitle}>
-            Galeria
-          </Text>
+            <View
+              style={
+                styles.statDivider
+              }
+            />
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={
-              styles.galleryContent
+            <View style={styles.statItem}>
+              <Text
+                style={
+                  styles.statValue
+                }
+              >
+                {venue.distance}
+              </Text>
+
+              <Text
+                style={
+                  styles.statLabel
+                }
+              >
+                Distância
+              </Text>
+            </View>
+
+            <View
+              style={
+                styles.statDivider
+              }
+            />
+
+            <View style={styles.statItem}>
+              <Text
+                style={
+                  styles.statValue
+                }
+              >
+                {venue.people}
+              </Text>
+
+              <Text
+                style={
+                  styles.statLabel
+                }
+              >
+                Pessoas
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.infoCard}>
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              Informações
+            </Text>
+
+            <InfoRow
+              icon="📍"
+              label="Endereço"
+              value={
+                venue.address
+              }
+            />
+
+            <InfoRow
+              icon="🚪"
+              label="Status"
+              value={
+                isOpen
+                  ? "Aberto"
+                  : "Fechado"
+              }
+            />
+
+            <InfoRow
+              icon="🎧"
+              label="DJ"
+              value={
+                venue.dj
+              }
+            />
+
+            <InfoRow
+              icon="🎵"
+              label="Playlist"
+              value={
+                venue.playlist
+              }
+            />
+
+            <InfoRow
+              icon="🎁"
+              label="Promoção"
+              value={
+                venue.promotion
+              }
+            />
+          </View>
+
+          <View
+            style={
+              styles.descriptionCard
             }
           >
-            {venue.gallery.map(
-              (photo, index) => (
-                <Image
-                  key={`${venue.id}-${index}`}
-                  source={{ uri: photo }}
-                  style={styles.galleryImage}
-                  resizeMode="cover"
-                />
-              ),
-            )}
-          </ScrollView>
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              Sobre o local
+            </Text>
+
+            <Text
+              style={
+                styles.description
+              }
+            >
+              {venue.description}
+            </Text>
+          </View>
+
+          {venue.gallery.length >
+            0 && (
+            <View
+              style={
+                styles.gallerySection
+              }
+            >
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Galeria
+              </Text>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={
+                  false
+                }
+                contentContainerStyle={
+                  styles.galleryContent
+                }
+              >
+                {venue.gallery.map(
+                  (
+                    photo,
+                    index,
+                  ) => (
+                    <Image
+                      key={`${venue.id}-${index}`}
+                      source={{
+                        uri: photo,
+                      }}
+                      style={
+                        styles.galleryImage
+                      }
+                      resizeMode="cover"
+                    />
+                  ),
+                )}
+              </ScrollView>
+            </View>
+          )}
+
+          <Pressable
+            onPress={
+              handleOpenGroups
+            }
+            style={({ pressed }) => [
+              styles.groupButton,
+
+              pressed &&
+                styles.pressed,
+            ]}
+          >
+            <Text
+              style={
+                styles.groupButtonText
+              }
+            >
+              🎉 Criar grupo neste local
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleBack}
+            style={({ pressed }) => [
+              styles.backButton,
+
+              pressed &&
+                styles.pressed,
+            ]}
+          >
+            <Text
+              style={
+                styles.backButtonText
+              }
+            >
+              Voltar
+            </Text>
+          </Pressable>
         </View>
-      )}
-
-      <Pressable
-        style={({ pressed }) => [
-          styles.groupButton,
-          pressed && styles.pressed,
-        ]}
-        onPress={() =>
-          router.push("/(main)/groups")
-        }
-      >
-        <Text style={styles.groupButtonText}>
-          🎉 Criar grupo neste local
-        </Text>
-      </Pressable>
-
-      <Pressable
-        style={({ pressed }) => [
-          styles.backButton,
-          pressed && styles.pressed,
-        ]}
-        onPress={() => router.back()}
-      >
-        <Text style={styles.backButtonText}>
-          Voltar
-        </Text>
-      </Pressable>
+      </ScreenContainer>
     </ScrollView>
   );
 }
@@ -388,11 +594,19 @@ function InfoRow({
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoLabel}>
-        <Text style={styles.infoIcon}>
+        <Text
+          style={
+            styles.infoIcon
+          }
+        >
           {icon}
         </Text>
 
-        <Text style={styles.infoLabelText}>
+        <Text
+          style={
+            styles.infoLabelText
+          }
+        >
           {label}
         </Text>
       </View>
@@ -413,9 +627,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#090909",
   },
 
-  content: {
-    padding: 20,
+  scrollContent: {
+    paddingTop: 20,
     paddingBottom: 50,
+  },
+
+  content: {
+    width: "100%",
   },
 
   backButtonTop: {
@@ -433,7 +651,7 @@ const styles = StyleSheet.create({
 
   heroImage: {
     width: "100%",
-    height: 240,
+    height: 300,
     borderRadius: 20,
     backgroundColor: "#1B1B1B",
   },
@@ -448,6 +666,7 @@ const styles = StyleSheet.create({
 
   headerInfo: {
     flex: 1,
+    minWidth: 0,
   },
 
   title: {
@@ -461,6 +680,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     marginTop: 6,
+  },
+
+  address: {
+    color: "#888888",
+    fontSize: 13,
+    marginTop: 7,
   },
 
   statusBadge: {
@@ -498,7 +723,7 @@ const styles = StyleSheet.create({
 
   actionButton: {
     flex: 1,
-    minHeight: 58,
+    minHeight: 64,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#FFC400",
@@ -506,6 +731,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
+    paddingVertical: 9,
   },
 
   favoriteActive: {
@@ -527,10 +753,15 @@ const styles = StyleSheet.create({
     color: "#000000",
   },
 
+  checkinIconActive: {
+    color: "#FFFFFF",
+  },
+
   actionText: {
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "800",
+    textAlign: "center",
   },
 
   favoriteTextActive: {
@@ -546,6 +777,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#245C2D",
   },
 
   checkedInBannerText: {
@@ -575,6 +808,7 @@ const styles = StyleSheet.create({
     color: "#FFC400",
     fontSize: 17,
     fontWeight: "800",
+    textAlign: "center",
   },
 
   statLabel: {
@@ -685,6 +919,7 @@ const styles = StyleSheet.create({
   },
 
   backButton: {
+    backgroundColor: "#151515",
     borderWidth: 1,
     borderColor: "#333333",
     borderRadius: 16,
@@ -699,16 +934,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  pressed: {
-    opacity: 0.8,
+  errorScreen: {
+    flex: 1,
+    backgroundColor: "#090909",
+    justifyContent: "center",
   },
 
   errorContainer: {
-    flex: 1,
-    backgroundColor: "#090909",
-    alignItems: "center",
-    justifyContent: "center",
+    width: "100%",
+    backgroundColor: "#1B1B1B",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#292929",
     padding: 24,
+    alignItems: "center",
+  },
+
+  errorIcon: {
+    fontSize: 42,
   },
 
   errorTitle: {
@@ -716,7 +959,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "800",
     textAlign: "center",
-    marginBottom: 20,
+    marginTop: 14,
+  },
+
+  errorText: {
+    color: "#888888",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginTop: 8,
   },
 
   errorButton: {
@@ -724,11 +975,16 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 24,
     paddingVertical: 14,
+    marginTop: 20,
   },
 
   errorButtonText: {
     color: "#000000",
     fontSize: 15,
     fontWeight: "800",
+  },
+
+  pressed: {
+    opacity: 0.8,
   },
 });

@@ -1,174 +1,266 @@
-import {
-  useEffect,
-} from "react";
-
+import { useEffect } from "react";
 
 import * as Location from "expo-location";
 
+import { useLocationStore } from "@/store/location-store";
+import { usePresenceStore } from "@/store/presence-store";
 
-import {
-  useLocationStore,
-} from "@/store/location-store";
+export default function LocationTracker() {
+  const updateLocation =
+    useLocationStore(
+      (state) =>
+        state.updateLocation,
+    );
 
+  const setStatus =
+    useLocationStore(
+      (state) =>
+        state.setStatus,
+    );
 
-import {
-  usePresenceStore,
-} from "@/store/presence-store";
+  const setError =
+    useLocationStore(
+      (state) =>
+        state.setError,
+    );
 
+  const setTracking =
+    useLocationStore(
+      (state) =>
+        state.setTracking,
+    );
 
+  const updatePosition =
+    usePresenceStore(
+      (state) =>
+        state.updatePosition,
+    );
 
+  useEffect(() => {
+    let mounted = true;
 
-export default function LocationTracker(){
+    let subscription:
+      | Location.LocationSubscription
+      | null = null;
 
-
-
-  const {
-    updateLocation,
-  } = useLocationStore();
-
-
-
-
-  const {
-    updatePosition,
-  } = usePresenceStore();
-
-
-
-
-
-  useEffect(()=>{
-
-
-    let subscription:any;
-
-
-
-
-    async function startTracking(){
-
-
-
-      const permission =
-
-      await Location.requestForegroundPermissionsAsync();
-
-
-
-
-
-      if(permission.status !== "granted"){
-
+    function updateStores(
+      latitude: number,
+      longitude: number,
+    ) {
+      if (!mounted) {
         return;
-
       }
 
-
-
-
-
-
-      subscription =
-
-      await Location.watchPositionAsync(
-
-
-        {
-
-
-          accuracy:
-          Location.Accuracy.High,
-
-
-
-          timeInterval:5000,
-
-
-
-          distanceInterval:10,
-
-
-        },
-
-
-
-        location=>{
-
-
-
-          const latitude =
-          location.coords.latitude;
-
-
-
-          const longitude =
-          location.coords.longitude;
-
-
-
-
-
-          updateLocation(
-
-            latitude,
-
-            longitude
-
-          );
-
-
-
-
-          updatePosition(
-
-            latitude,
-
-            longitude
-
-          );
-
-
-
-        }
-
-
+      updateLocation(
+        latitude,
+        longitude,
       );
 
-
-
+      updatePosition(
+        latitude,
+        longitude,
+      );
     }
 
+    async function startTracking() {
+      try {
+        setStatus(
+          "requesting",
+        );
 
+        setError(null);
+        setTracking(false);
 
+        /*
+         * Primeiro verifica o estado atual
+         * da permissão antes de solicitar
+         * novamente.
+         */
+        let permission =
+          await Location.getForegroundPermissionsAsync();
 
+        if (!mounted) {
+          return;
+        }
 
-    startTracking();
+        if (
+          permission.status !==
+          "granted"
+        ) {
+          permission =
+            await Location.requestForegroundPermissionsAsync();
+        }
 
+        if (!mounted) {
+          return;
+        }
 
+        if (
+          permission.status !==
+          "granted"
+        ) {
+          setStatus(
+            "denied",
+          );
 
+          setTracking(false);
 
+          setError(
+            "Permissão de localização não concedida.",
+          );
 
-    return ()=>{
+          return;
+        }
 
+        setStatus(
+          "granted",
+        );
 
-      if(subscription){
+        setError(null);
 
+        /*
+         * Usa uma localização conhecida,
+         * quando disponível, para atualizar
+         * a interface rapidamente.
+         */
+        try {
+          const lastKnown =
+            await Location.getLastKnownPositionAsync();
+
+          if (
+            mounted &&
+            lastKnown
+          ) {
+            updateStores(
+              lastKnown.coords.latitude,
+              lastKnown.coords.longitude,
+            );
+          }
+        } catch {
+          /*
+           * A ausência de uma localização
+           * anterior não impede o restante
+           * do rastreamento.
+           */
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        /*
+         * Tenta obter uma localização atual.
+         */
+        try {
+          const currentPosition =
+            await Location.getCurrentPositionAsync(
+              {
+                accuracy:
+                  Location.Accuracy.High,
+              },
+            );
+
+          if (mounted) {
+            updateStores(
+              currentPosition.coords
+                .latitude,
+
+              currentPosition.coords
+                .longitude,
+            );
+          }
+        } catch {
+          /*
+           * O watchPositionAsync abaixo
+           * ainda poderá fornecer uma
+           * posição posteriormente.
+           */
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        subscription =
+          await Location.watchPositionAsync(
+            {
+              accuracy:
+                Location.Accuracy.High,
+
+              timeInterval:
+                5000,
+
+              distanceInterval:
+                10,
+            },
+
+            (location) => {
+              updateStores(
+                location.coords
+                  .latitude,
+
+                location.coords
+                  .longitude,
+              );
+            },
+          );
+
+        if (!mounted) {
+          subscription.remove();
+
+          subscription =
+            null;
+
+          return;
+        }
+
+        setTracking(true);
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+
+        setStatus(
+          "error",
+        );
+
+        setTracking(false);
+
+        if (
+          error instanceof Error
+        ) {
+          setError(
+            error.message,
+          );
+        } else {
+          setError(
+            "Não foi possível obter sua localização.",
+          );
+        }
+      }
+    }
+
+    void startTracking();
+
+    return () => {
+      mounted = false;
+
+      if (subscription) {
         subscription.remove();
 
+        subscription =
+          null;
       }
 
-
+      setTracking(false);
     };
-
-
-
-  },[]);
-
-
-
-
+  }, [
+    setError,
+    setStatus,
+    setTracking,
+    updateLocation,
+    updatePosition,
+  ]);
 
   return null;
-
-
 }

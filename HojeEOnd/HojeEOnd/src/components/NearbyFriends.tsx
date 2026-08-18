@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+
 import {
   Image,
   Pressable,
@@ -9,6 +11,14 @@ import {
 import { router } from "expo-router";
 
 import { friends } from "@/data/friends";
+import { locations } from "@/data/locations";
+
+import { useLocationStore } from "@/store/location-store";
+
+import {
+  calculateDistance,
+  formatDistance,
+} from "@/utils/distance";
 
 interface NearbyFriendsProps {
   limit?: number;
@@ -17,10 +27,89 @@ interface NearbyFriendsProps {
 export default function NearbyFriends({
   limit = 5,
 }: NearbyFriendsProps) {
-  const nearbyFriends = friends.slice(
-    0,
-    limit,
+  const latitude = useLocationStore(
+    (state) => state.latitude,
   );
+
+  const longitude = useLocationStore(
+    (state) => state.longitude,
+  );
+
+  const hasUserLocation =
+    latitude !== null &&
+    longitude !== null;
+
+  const nearbyFriends = useMemo(() => {
+    const result = friends.map((friend) => {
+      const friendLocation =
+        locations.find(
+          (location) =>
+            location.userId === friend.id,
+        );
+
+      if (
+        !hasUserLocation ||
+        !friendLocation
+      ) {
+        return {
+          ...friend,
+          distanceMeters: null,
+          displayDistance:
+            "Distância indisponível",
+        };
+      }
+
+      const distanceMeters =
+        calculateDistance(
+          latitude,
+          longitude,
+          friendLocation.latitude,
+          friendLocation.longitude,
+        );
+
+      return {
+        ...friend,
+        distanceMeters,
+        displayDistance:
+          formatDistance(
+            distanceMeters,
+          ),
+      };
+    });
+
+    return result
+      .sort((a, b) => {
+        if (
+          a.distanceMeters === null &&
+          b.distanceMeters === null
+        ) {
+          return 0;
+        }
+
+        if (
+          a.distanceMeters === null
+        ) {
+          return 1;
+        }
+
+        if (
+          b.distanceMeters === null
+        ) {
+          return -1;
+        }
+
+        return (
+          a.distanceMeters -
+          b.distanceMeters
+        );
+      })
+      .slice(0, limit);
+  }, [
+    hasUserLocation,
+    latitude,
+    longitude,
+    limit,
+  ]);
 
   if (nearbyFriends.length === 0) {
     return (
@@ -44,13 +133,15 @@ export default function NearbyFriends({
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <View>
+        <View style={styles.headerInfo}>
           <Text style={styles.title}>
             Amigos próximos
           </Text>
 
           <Text style={styles.subtitle}>
-            Veja quem está online
+            {hasUserLocation
+              ? "Ordenados pela distância"
+              : "Aguardando sua localização"}
           </Text>
         </View>
 
@@ -93,7 +184,9 @@ export default function NearbyFriends({
               ]}
             >
               <View
-                style={styles.avatarContainer}
+                style={
+                  styles.avatarContainer
+                }
               >
                 <Image
                   source={{
@@ -122,29 +215,38 @@ export default function NearbyFriends({
                   {friend.name}
                 </Text>
 
+                <Text
+                  style={[
+                    styles.status,
+                    isOnline
+                      ? styles.onlineText
+                      : styles.offlineText,
+                  ]}
+                >
+                  {isOnline
+                    ? "Online agora"
+                    : "Offline"}
+                </Text>
+
                 <View
-                  style={styles.statusRow}
+                  style={styles.distanceRow}
                 >
                   <Text
-                    style={[
-                      styles.status,
-                      isOnline
-                        ? styles.onlineText
-                        : styles.offlineText,
-                    ]}
+                    style={
+                      styles.locationIcon
+                    }
                   >
-                    {isOnline
-                      ? "Online agora"
-                      : "Offline"}
+                    📍
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.distanceText
+                    }
+                  >
+                    {friend.displayDistance}
                   </Text>
                 </View>
-
-                <Text
-                  style={styles.locationText}
-                  numberOfLines={1}
-                >
-                  📍 Próximo de você
-                </Text>
               </View>
 
               <Text style={styles.arrow}>
@@ -160,7 +262,7 @@ export default function NearbyFriends({
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 24,
+    marginTop: 4,
   },
 
   headerRow: {
@@ -169,6 +271,10 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 12,
     marginBottom: 14,
+  },
+
+  headerInfo: {
+    flex: 1,
   },
 
   title: {
@@ -214,7 +320,11 @@ const styles = StyleSheet.create({
 
   friendCardPressed: {
     opacity: 0.82,
-    transform: [{ scale: 0.985 }],
+    transform: [
+      {
+        scale: 0.985,
+      },
+    ],
   },
 
   avatarContainer: {
@@ -261,13 +371,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-  statusRow: {
-    marginTop: 4,
-  },
-
   status: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
+    marginTop: 4,
   },
 
   onlineText: {
@@ -278,10 +385,21 @@ const styles = StyleSheet.create({
     color: "#888888",
   },
 
-  locationText: {
-    color: "#666666",
+  distanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 5,
+  },
+
+  locationIcon: {
+    fontSize: 11,
+    marginRight: 4,
+  },
+
+  distanceText: {
+    color: "#FFC400",
     fontSize: 12,
-    marginTop: 4,
+    fontWeight: "700",
   },
 
   arrow: {
@@ -295,7 +413,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 22,
     alignItems: "center",
-    marginTop: 20,
     borderWidth: 1,
     borderColor: "#292929",
   },

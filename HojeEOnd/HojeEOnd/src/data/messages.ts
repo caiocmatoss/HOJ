@@ -1,59 +1,45 @@
 export type Message = {
+  id: string;
 
-  id:string;
+  groupId: string;
 
-  groupId:string;
+  userId: string;
 
-  userId:string;
+  userName: string;
 
-  userName:string;
+  text: string;
 
-  text:string;
-
-  createdAt:string;
-
+  createdAt: string;
 };
 
-
-
-
-
-export const messages:Message[] = [
-
-
+export const messages: Message[] = [
   {
+    id: "1",
 
-    id:"1",
+    groupId: "1",
 
-    groupId:"1",
+    userId: "1",
 
-    userId:"1",
+    userName: "Caio",
 
-    userName:"Caio",
+    text: "Bora sair hoje? 🎧",
 
-    text:"Bora sair hoje? 🎧",
-
-    createdAt:"2026-01-01",
-
+    createdAt:
+      "2026-08-18T00:40:00.000Z",
   },
 
-
-
   {
+    id: "2",
 
-    id:"2",
+    groupId: "1",
 
-    groupId:"1",
+    userId: "2",
 
-    userId:"2",
+    userName: "Ana",
 
-    userName:"Ana",
+    text: "Estou dentro! ✨",
 
-    text:"Estou dentro! ✨",
-
-    createdAt:"2026-01-01",
-
+    createdAt:
+      "2026-08-18T00:45:00.000Z",
   },
-
-
 ];

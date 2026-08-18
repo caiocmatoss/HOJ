@@ -1,5 +1,4 @@
 export type Group = {
-
   id: string;
 
   name: string;
@@ -7,75 +6,52 @@ export type Group = {
   venueId: string;
 
   members: string[];
-
 };
 
-
-
-
-
 export const groups: Group[] = [
-
-
   {
-
     id: "1",
 
-    name: "Rolê Sexta 🎧",
+    name:
+      "Rolê Sexta 🎧",
 
-    venueId: "1",
-
-    members: [
-
+    venueId:
       "1",
 
+    members: [
+      "1",
       "2",
-
-      "3"
-
+      "3",
     ],
-
   },
 
-
-
   {
-
     id: "2",
 
-    name: "Cinema 🍿",
+    name:
+      "Cinema 🎬",
 
-    venueId: "2",
+    venueId:
+      "2",
 
     members: [
-
       "1",
-
-      "2"
-
+      "2",
     ],
-
   },
-
-
 
   {
-
     id: "3",
 
-    name: "Festas 🎉",
+    name:
+      "Festas 🎉",
 
-    venueId: "3",
+    venueId:
+      "3",
 
     members: [
-
       "1",
-
-      "3"
-
+      "3",
     ],
-
   },
-
-
 ];

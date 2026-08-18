@@ -1,5 +1,5 @@
-import { router } from "expo-router";
 import { useMemo } from "react";
+
 import {
   FlatList,
   Pressable,
@@ -8,11 +8,25 @@ import {
   View,
 } from "react-native";
 
-import { groups } from "@/data/groups";
+import { router } from "expo-router";
+
+import { EmptyState } from "@/components/ui/EmptyState";
+
 import { users } from "@/data/users";
+
+import { useGroupStore } from "@/store/group-store";
 import { useInviteStore } from "@/store/invite-store";
+import { useUserStore } from "@/store/user-store";
 
 export default function InvitesScreen() {
+  const user = useUserStore(
+    (state) => state.user,
+  );
+
+  const groups = useGroupStore(
+    (state) => state.groups,
+  );
+
   const allInvites = useInviteStore(
     (state) => state.invites,
   );
@@ -25,164 +39,263 @@ export default function InvitesScreen() {
     (state) => state.rejectInvite,
   );
 
-  const pendingInvites = useMemo(
-    () =>
-      allInvites.filter(
+  const pendingInvites =
+    useMemo(() => {
+      if (!user) {
+        return [];
+      }
+
+      return allInvites.filter(
         (invite) =>
-          invite.status === "pending",
-      ),
-    [allInvites],
-  );
+          invite.status ===
+            "pending" &&
+          invite.toUserId ===
+            user.id,
+      );
+    }, [
+      allInvites,
+      user,
+    ]);
 
-  const getSender = (userId: string) =>
+  const getSender = (
+    userId: string,
+  ) =>
     users.find(
-      (user) => user.id === userId,
+      (item) =>
+        item.id === userId,
     );
 
-  const getGroup = (groupId: string) =>
+  const getGroup = (
+    groupId: string,
+  ) =>
     groups.find(
-      (group) => group.id === groupId,
+      (group) =>
+        group.id === groupId,
     );
+
+  const handleBackToGroups = () => {
+    router.replace(
+      "/(main)/groups",
+    );
+  };
+
+  const handleAccept = (
+    inviteId: string,
+  ) => {
+    acceptInvite(inviteId);
+  };
+
+  const handleReject = (
+    inviteId: string,
+  ) => {
+    rejectInvite(inviteId);
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <Pressable
+          onPress={
+            handleBackToGroups
+          }
+          style={({ pressed }) => [
+            styles.backButton,
+
+            pressed &&
+              styles.pressed,
+          ]}
+        >
+          <Text
+            style={
+              styles.backButtonText
+            }
+          >
+            ← Voltar
+          </Text>
+        </Pressable>
+
         <Text style={styles.title}>
           Convites
         </Text>
 
         <Text style={styles.subtitle}>
-          {pendingInvites.length === 0
+          {pendingInvites.length ===
+          0
             ? "Nenhum convite pendente"
-            : `${pendingInvites.length} convite${
-                pendingInvites.length === 1
-                  ? ""
-                  : "s"
-              } pendente${
-                pendingInvites.length === 1
-                  ? ""
-                  : "s"
+            : `${pendingInvites.length} ${
+                pendingInvites.length ===
+                1
+                  ? "convite pendente"
+                  : "convites pendentes"
               }`}
         </Text>
       </View>
 
-      {pendingInvites.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>
-            ✉️
-          </Text>
-
-          <Text style={styles.emptyTitle}>
-            Nenhum convite
-          </Text>
-
-          <Text style={styles.emptyText}>
-            Quando alguém convidar você para
-            um grupo, o convite aparecerá aqui.
-          </Text>
-
-          <Pressable
-            onPress={() =>
-              router.push(
-                "/(main)/groups",
-              )
-            }
-            style={({ pressed }) => [
-              styles.emptyButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.emptyButtonText}>
-              Ver grupos
-            </Text>
-          </Pressable>
-        </View>
-      ) : (
-        <FlatList
-          data={pendingInvites}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={
-            styles.listContent
-          }
-          renderItem={({ item }) => {
-            const sender = getSender(
+      <FlatList
+        data={pendingInvites}
+        keyExtractor={(item) =>
+          item.id
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          pendingInvites.length > 0
+            ? styles.listContent
+            : styles.emptyListContent
+        }
+        renderItem={({ item }) => {
+          const sender =
+            getSender(
               item.fromUserId,
             );
 
-            const group = getGroup(
+          const group =
+            getGroup(
               item.groupId,
             );
 
-            return (
-              <View style={styles.card}>
-                <View style={styles.iconContainer}>
-                  <Text style={styles.icon}>
-                    👥
-                  </Text>
-                </View>
+          return (
+            <View style={styles.card}>
+              <View
+                style={
+                  styles.iconContainer
+                }
+              >
+                <Text style={styles.icon}>
+                  👥
+                </Text>
+              </View>
 
-                <View style={styles.cardContent}>
-                  <Text style={styles.cardTitle}>
-                    {sender?.name ?? "Alguém"}
-                  </Text>
+              <View
+                style={
+                  styles.cardContent
+                }
+              >
+                <Text
+                  style={
+                    styles.cardTitle
+                  }
+                >
+                  {sender?.name ??
+                    "Alguém"}
+                </Text>
 
-                  <Text style={styles.message}>
-                    convidou você para o grupo
-                  </Text>
+                <Text
+                  style={
+                    styles.message
+                  }
+                >
+                  convidou você para o
+                  grupo
+                </Text>
 
-                  <Text style={styles.groupName}>
-                    {group?.name ?? "Grupo"}
-                  </Text>
+                <Text
+                  style={
+                    styles.groupName
+                  }
+                >
+                  {group?.name ??
+                    "Grupo"}
+                </Text>
 
-                  <Text style={styles.groupMeta}>
-                    Convite para participar deste
-                    grupo.
+                {group ? (
+                  <Text
+                    style={
+                      styles.groupMeta
+                    }
+                  >
+                    {group.members.length}{" "}
+                    {group.members.length ===
+                    1
+                      ? "membro"
+                      : "membros"}
                   </Text>
+                ) : (
+                  <Text
+                    style={
+                      styles.groupUnavailable
+                    }
+                  >
+                    Este grupo não está
+                    mais disponível.
+                  </Text>
+                )}
 
-                  <View style={styles.actionRow}>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.acceptButton,
-                        pressed && styles.pressed,
-                      ]}
-                      onPress={() =>
-                        acceptInvite(item.id)
+                <View
+                  style={
+                    styles.actionRow
+                  }
+                >
+                  <Pressable
+                    disabled={!group}
+                    onPress={() =>
+                      handleAccept(
+                        item.id,
+                      )
+                    }
+                    style={({
+                      pressed,
+                    }) => [
+                      styles.acceptButton,
+
+                      !group &&
+                        styles.disabledButton,
+
+                      pressed &&
+                        Boolean(group) &&
+                        styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={
+                        styles.acceptText
                       }
                     >
-                      <Text
-                        style={
-                          styles.acceptText
-                        }
-                      >
-                        Aceitar
-                      </Text>
-                    </Pressable>
+                      Aceitar
+                    </Text>
+                  </Pressable>
 
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.rejectButton,
-                        pressed && styles.pressed,
-                      ]}
-                      onPress={() =>
-                        rejectInvite(item.id)
+                  <Pressable
+                    onPress={() =>
+                      handleReject(
+                        item.id,
+                      )
+                    }
+                    style={({
+                      pressed,
+                    }) => [
+                      styles.rejectButton,
+
+                      pressed &&
+                        styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={
+                        styles.rejectText
                       }
                     >
-                      <Text
-                        style={
-                          styles.rejectText
-                        }
-                      >
-                        Recusar
-                      </Text>
-                    </Pressable>
-                  </View>
+                      Recusar
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
-            );
-          }}
-        />
-      )}
+            </View>
+          );
+        }}
+        ListEmptyComponent={
+          <EmptyState
+            icon="✉️"
+            title="Nenhum convite"
+            message="Quando alguém convidar você para um grupo, o convite aparecerá aqui."
+            actionLabel="Voltar para grupos"
+            onAction={
+              handleBackToGroups
+            }
+          />
+        }
+      />
     </View>
   );
 }
@@ -195,8 +308,21 @@ const styles = StyleSheet.create({
 
   header: {
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: 20,
     paddingBottom: 12,
+  },
+
+  backButton: {
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 12,
+  },
+
+  backButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
   },
 
   title: {
@@ -214,6 +340,12 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 8,
+    paddingBottom: 120,
+  },
+
+  emptyListContent: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
     paddingBottom: 120,
   },
 
@@ -243,6 +375,7 @@ const styles = StyleSheet.create({
 
   cardContent: {
     flex: 1,
+    minWidth: 0,
   },
 
   cardTitle: {
@@ -266,7 +399,13 @@ const styles = StyleSheet.create({
 
   groupMeta: {
     color: "#AAAAAA",
-    fontSize: 13,
+    fontSize: 12,
+    marginTop: 5,
+  },
+
+  groupUnavailable: {
+    color: "#FF6B6B",
+    fontSize: 12,
     marginTop: 5,
   },
 
@@ -306,44 +445,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 30,
-  },
-
-  emptyIcon: {
-    fontSize: 45,
-    marginBottom: 14,
-  },
-
-  emptyTitle: {
-    color: "#FFFFFF",
-    fontSize: 21,
-    fontWeight: "800",
-  },
-
-  emptyText: {
-    color: "#888888",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-    marginTop: 8,
-  },
-
-  emptyButton: {
-    backgroundColor: "#FFC400",
-    borderRadius: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    marginTop: 20,
-  },
-
-  emptyButtonText: {
-    color: "#000000",
-    fontSize: 14,
-    fontWeight: "800",
+  disabledButton: {
+    opacity: 0.4,
   },
 
   pressed: {

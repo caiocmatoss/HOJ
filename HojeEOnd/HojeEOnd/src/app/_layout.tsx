@@ -1,105 +1,45 @@
 import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
-} from "expo-router";
-
-
-import {
   Stack,
 } from "expo-router";
 
-
-import {
-  useColorScheme,
-} from "react-native";
-
-
-import * as SplashScreen from "expo-splash-screen";
-
-
-import {
-  useEffect,
-} from "react";
-
-
 import LocationTracker from "@/components/LocationTracker";
-
-
-SplashScreen.preventAutoHideAsync();
-
-
-
+import NotificationManager from "@/components/NotificationManager";
 
 export default function RootLayout() {
-
-
-  const colorScheme =
-    useColorScheme();
-
-
-
-
-
-  useEffect(() => {
-
-
-    async function hideSplash() {
-
-
-      await SplashScreen.hideAsync();
-
-
-    }
-
-
-    hideSplash();
-
-
-  }, []);
-
-
-
-
-
-
   return (
-
-
-    <ThemeProvider
-
-      value={
-        colorScheme === "dark"
-        ?
-        DarkTheme
-        :
-        DefaultTheme
-      }
-
-    >
-
-
-
+    <>
       <LocationTracker />
 
-
+      <NotificationManager />
 
       <Stack
-
         screenOptions={{
-
-          headerShown:false,
-
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: "#090909",
+          },
         }}
+      >
+        <Stack.Screen
+          name="index"
+        />
 
-      />
+        <Stack.Screen
+          name="(auth)"
+        />
 
+        <Stack.Screen
+          name="(main)"
+        />
 
+        <Stack.Screen
+          name="venue/[id]"
+        />
 
-    </ThemeProvider>
-
-
+        <Stack.Screen
+          name="event/[id]"
+        />
+      </Stack>
+    </>
   );
-
-
 }

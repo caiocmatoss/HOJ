@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState,
+} from "react";
 
 import {
   FlatList,
@@ -12,121 +15,158 @@ import {
 
 import { router } from "expo-router";
 
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ScreenContainer } from "@/components/ui/ScreenContainer";
+
 import { friends } from "@/data/friends";
 
 export default function FriendsScreen() {
-  const [searchQuery, setSearchQuery] =
-    useState("");
+  const [
+    searchQuery,
+    setSearchQuery,
+  ] = useState("");
 
-  const filteredFriends = useMemo(() => {
-    const query = searchQuery
-      .trim()
-      .toLowerCase();
+  const filteredFriends =
+    useMemo(() => {
+      const query =
+        searchQuery
+          .trim()
+          .toLowerCase();
 
-    if (!query) {
-      return friends;
-    }
+      if (!query) {
+        return friends;
+      }
 
-    return friends.filter((friend) =>
-      friend.name
-        .toLowerCase()
-        .includes(query),
+      return friends.filter(
+        (friend) =>
+          friend.name
+            .toLowerCase()
+            .includes(query),
+      );
+    }, [searchQuery]);
+
+  const onlineFriends =
+    useMemo(
+      () =>
+        filteredFriends.filter(
+          (friend) =>
+            friend.status ===
+            "online",
+        ),
+      [filteredFriends],
     );
-  }, [searchQuery]);
 
-  const onlineFriends = useMemo(
-    () =>
-      filteredFriends.filter(
-        (friend) =>
-          friend.status === "online",
-      ),
-    [filteredFriends],
-  );
+  const offlineFriends =
+    useMemo(
+      () =>
+        filteredFriends.filter(
+          (friend) =>
+            friend.status ===
+            "offline",
+        ),
+      [filteredFriends],
+    );
 
-  const offlineFriends = useMemo(
-    () =>
-      filteredFriends.filter(
-        (friend) =>
-          friend.status === "offline",
-      ),
-    [filteredFriends],
-  );
+  const orderedFriends = [
+    ...onlineFriends,
+    ...offlineFriends,
+  ];
+
+  const hasSearch =
+    searchQuery.trim().length > 0;
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>
-          Amigos
-        </Text>
-
-        <Text style={styles.subtitle}>
-          {friends.length}{" "}
-          {friends.length === 1
-            ? "amigo"
-            : "amigos"}{" "}
-          conectados à sua rede
-        </Text>
-      </View>
-
-      <TextInput
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder="Buscar amigos..."
-        placeholderTextColor="#777777"
-        style={styles.searchInput}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-      />
-
-      {filteredFriends.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>
-            👥
-          </Text>
-
-          <Text style={styles.emptyTitle}>
-            Nenhum amigo encontrado
-          </Text>
-
-          <Text style={styles.emptyText}>
-            Tente buscar por outro nome.
-          </Text>
-
-          {searchQuery.length > 0 && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.clearButton,
-                pressed && styles.pressed,
-              ]}
-              onPress={() =>
-                setSearchQuery("")
-              }
-            >
-              <Text
-                style={styles.clearButtonText}
-              >
-                Limpar busca
+      <FlatList
+        data={orderedFriends}
+        keyExtractor={(item) =>
+          item.id
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          orderedFriends.length > 0
+            ? styles.listContent
+            : styles.emptyListContent
+        }
+        ListHeaderComponent={
+          <ScreenContainer>
+            <View style={styles.header}>
+              <Text style={styles.title}>
+                Amigos
               </Text>
-            </Pressable>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={[
-            ...onlineFriends,
-            ...offlineFriends,
-          ]}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={
-            styles.listContent
-          }
-          renderItem={({ item }) => (
+
+              <Text style={styles.subtitle}>
+                {friends.length}{" "}
+                {friends.length === 1
+                  ? "amigo"
+                  : "amigos"}{" "}
+                conectados à sua rede
+              </Text>
+
+              <TextInput
+                value={searchQuery}
+                onChangeText={
+                  setSearchQuery
+                }
+                placeholder="Buscar amigos..."
+                placeholderTextColor="#777777"
+                style={
+                  styles.searchInput
+                }
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+
+              {orderedFriends.length >
+                0 && (
+                <View
+                  style={
+                    styles.listHeader
+                  }
+                >
+                  <Text
+                    style={
+                      styles.sectionTitle
+                    }
+                  >
+                    {onlineFriends.length >
+                    0
+                      ? "Online agora"
+                      : "Amigos"}
+                  </Text>
+
+                  {onlineFriends.length >
+                    0 && (
+                    <Text
+                      style={
+                        styles.sectionMeta
+                      }
+                    >
+                      {
+                        onlineFriends.length
+                      }{" "}
+                      {onlineFriends.length ===
+                      1
+                        ? "amigo online"
+                        : "amigos online"}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          </ScreenContainer>
+        }
+        renderItem={({ item }) => (
+          <ScreenContainer>
             <Pressable
               style={({ pressed }) => [
                 styles.card,
-                pressed && styles.cardPressed,
+
+                pressed &&
+                  styles.cardPressed,
               ]}
               onPress={() =>
                 router.push({
@@ -153,8 +193,9 @@ export default function FriendsScreen() {
                 <View
                   style={[
                     styles.statusDot,
+
                     item.status ===
-                      "online"
+                    "online"
                       ? styles.onlineDot
                       : styles.offlineDot,
                   ]}
@@ -162,7 +203,9 @@ export default function FriendsScreen() {
               </View>
 
               <View
-                style={styles.friendInfo}
+                style={
+                  styles.friendInfo
+                }
               >
                 <Text
                   style={styles.name}
@@ -171,67 +214,71 @@ export default function FriendsScreen() {
                   {item.name}
                 </Text>
 
-                <View
-                  style={styles.statusRow}
-                >
-                  <Text
-                    style={[
-                      styles.status,
-                      item.status ===
-                        "online"
-                        ? styles.onlineText
-                        : styles.offlineText,
-                    ]}
-                  >
-                    {item.status ===
+                <Text
+                  style={[
+                    styles.status,
+
+                    item.status ===
                     "online"
-                      ? "Online"
-                      : "Offline"}
-                  </Text>
-                </View>
+                      ? styles.onlineText
+                      : styles.offlineText,
+                  ]}
+                >
+                  {item.status ===
+                  "online"
+                    ? "Online"
+                    : "Offline"}
+                </Text>
 
                 <Text
-                  style={styles.friendHint}
+                  style={
+                    styles.friendHint
+                  }
                   numberOfLines={1}
                 >
                   Toque para ver o perfil
                 </Text>
               </View>
 
-              <Text
-                style={styles.arrow}
-              >
+              <Text style={styles.arrow}>
                 ›
               </Text>
             </Pressable>
-          )}
-          ListHeaderComponent={
-            filteredFriends.length > 0 ? (
-              <View style={styles.listHeader}>
-                {onlineFriends.length >
-                  0 && (
-                  <Text
-                    style={styles.sectionTitle}
-                  >
-                    Online agora
-                  </Text>
-                )}
-
-                {onlineFriends.length ===
-                  0 &&
-                  offlineFriends.length >
-                    0 && (
-                    <Text
-                      style={styles.sectionTitle}
-                    >
-                      Amigos
-                    </Text>
-                  )}
-              </View>
-            ) : null
-          }
-        />
-      )}
+          </ScreenContainer>
+        )}
+        ListEmptyComponent={
+          <ScreenContainer>
+            <View
+              style={
+                styles.emptyWrapper
+              }
+            >
+              <EmptyState
+                icon="👥"
+                title="Nenhum amigo encontrado"
+                message={
+                  hasSearch
+                    ? "Tente buscar por outro nome."
+                    : "Quando você adicionar amigos, eles aparecerão aqui."
+                }
+                actionLabel={
+                  hasSearch
+                    ? "Limpar busca"
+                    : undefined
+                }
+                onAction={
+                  hasSearch
+                    ? () =>
+                        setSearchQuery(
+                          "",
+                        )
+                    : undefined
+                }
+              />
+            </View>
+          </ScreenContainer>
+        }
+      />
     </View>
   );
 }
@@ -242,9 +289,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#090909",
   },
 
-  header: {
-    paddingHorizontal: 20,
+  listContent: {
     paddingTop: 24,
+    paddingBottom: 120,
+  },
+
+  emptyListContent: {
+    flexGrow: 1,
+    paddingTop: 24,
+    paddingBottom: 120,
+  },
+
+  header: {
+    width: "100%",
     paddingBottom: 8,
   },
 
@@ -261,7 +318,7 @@ const styles = StyleSheet.create({
   },
 
   searchInput: {
-    marginHorizontal: 20,
+    width: "100%",
     marginTop: 18,
     marginBottom: 8,
     backgroundColor: "#1B1B1B",
@@ -274,14 +331,8 @@ const styles = StyleSheet.create({
     borderColor: "#292929",
   },
 
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 120,
-  },
-
   listHeader: {
-    paddingTop: 10,
+    paddingTop: 12,
     paddingBottom: 4,
   },
 
@@ -289,10 +340,17 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 19,
     fontWeight: "800",
-    marginBottom: 12,
+  },
+
+  sectionMeta: {
+    color: "#666666",
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 8,
   },
 
   card: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#1B1B1B",
@@ -305,7 +363,11 @@ const styles = StyleSheet.create({
 
   cardPressed: {
     opacity: 0.82,
-    transform: [{ scale: 0.985 }],
+    transform: [
+      {
+        scale: 0.985,
+      },
+    ],
   },
 
   avatarContainer: {
@@ -343,6 +405,7 @@ const styles = StyleSheet.create({
 
   friendInfo: {
     flex: 1,
+    minWidth: 0,
   },
 
   name: {
@@ -351,15 +414,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 5,
-  },
-
   status: {
     fontSize: 13,
     fontWeight: "700",
+    marginTop: 5,
   },
 
   onlineText: {
@@ -383,47 +441,8 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
 
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 30,
-  },
-
-  emptyIcon: {
-    fontSize: 46,
-    marginBottom: 12,
-  },
-
-  emptyTitle: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-
-  emptyText: {
-    color: "#888888",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 8,
-  },
-
-  clearButton: {
-    backgroundColor: "#FFC400",
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 14,
-    marginTop: 18,
-  },
-
-  clearButtonText: {
-    color: "#000000",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
-  pressed: {
-    opacity: 0.8,
+  emptyWrapper: {
+    width: "100%",
+    paddingTop: 40,
   },
 });

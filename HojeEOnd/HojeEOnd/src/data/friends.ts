@@ -1,62 +1,55 @@
 export type Friend = {
-
   id: string;
 
   name: string;
 
   avatar: string;
 
-  status: "online" | "offline";
-
+  status:
+    | "online"
+    | "offline";
 };
 
-
-
-
-
 export const friends: Friend[] = [
-
-
   {
+    id:
+      "2",
 
-    id:"2",
+    name:
+      "Ana",
 
-    name:"Ana",
+    avatar:
+      "https://i.pravatar.cc/150?img=32",
 
-    avatar:"https://i.pravatar.cc/150?img=32",
-
-    status:"online",
-
+    status:
+      "online",
   },
 
-
-
   {
+    id:
+      "3",
 
-    id:"3",
+    name:
+      "João",
 
-    name:"João",
+    avatar:
+      "https://i.pravatar.cc/150?img=45",
 
-    avatar:"https://i.pravatar.cc/150?img=45",
-
-    status:"offline",
-
+    status:
+      "offline",
   },
 
-
-
   {
+    id:
+      "4",
 
-    id:"4",
+    name:
+      "Marina",
 
-    name:"Marina",
+    avatar:
+      "https://i.pravatar.cc/150?img=47",
 
-    avatar:"https://i.pravatar.cc/150?img=47",
-
-    status:"online",
-
+    status:
+      "online",
   },
-
-
-
 ];

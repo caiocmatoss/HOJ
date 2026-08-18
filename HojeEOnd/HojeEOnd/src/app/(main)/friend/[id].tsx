@@ -1,8 +1,4 @@
 import {
-  router,
-  useLocalSearchParams,
-} from "expo-router";
-import {
   Image,
   Pressable,
   ScrollView,
@@ -11,39 +7,103 @@ import {
   View,
 } from "react-native";
 
+import {
+  router,
+  useLocalSearchParams,
+} from "expo-router";
+
+import { ScreenContainer } from "@/components/ui/ScreenContainer";
+
 import { friends } from "@/data/friends";
+
 import { usePresenceStore } from "@/store/presence-store";
 
 export default function FriendProfileScreen() {
-  const { id } = useLocalSearchParams<{
-    id?: string | string[];
-  }>();
+  const { id } =
+    useLocalSearchParams<{
+      id?: string | string[];
+    }>();
 
-  const friendId = Array.isArray(id)
-    ? id[0]
-    : id;
+  const friendId =
+    Array.isArray(id)
+      ? id[0]
+      : id;
 
   const friend = friends.find(
-    (item) => item.id === friendId,
+    (item) =>
+      item.id === friendId,
   );
 
-  const { visible } = usePresenceStore();
+  const visible =
+    usePresenceStore(
+      (state) => state.visible,
+    );
+
+  const handleBackToFriends = () => {
+    router.replace(
+      "/(main)/friends",
+    );
+  };
 
   if (!friend) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>
-          Amigo não encontrado
-        </Text>
-
-        <Pressable
-          style={styles.backButton}
-          onPress={() => router.back()}
+      <View style={styles.errorScreen}>
+        <ScreenContainer
+          maxWidth={760}
         >
-          <Text style={styles.backButtonText}>
-            Voltar
-          </Text>
-        </Pressable>
+          <View
+            style={
+              styles.errorContainer
+            }
+          >
+            <Text
+              style={
+                styles.errorIcon
+              }
+            >
+              👤
+            </Text>
+
+            <Text
+              style={
+                styles.errorTitle
+              }
+            >
+              Amigo não encontrado
+            </Text>
+
+            <Text
+              style={
+                styles.errorText
+              }
+            >
+              Não foi possível encontrar
+              este amigo.
+            </Text>
+
+            <Pressable
+              onPress={
+                handleBackToFriends
+              }
+              style={({
+                pressed,
+              }) => [
+                styles.backButton,
+
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={
+                  styles.backButtonText
+                }
+              >
+                Voltar para amigos
+              </Text>
+            </Pressable>
+          </View>
+        </ScreenContainer>
       </View>
     );
   }
@@ -51,118 +111,296 @@ export default function FriendProfileScreen() {
   const isOnline =
     friend.status === "online";
 
+  const handleOpenChat = () => {
+    router.push({
+      pathname:
+        "/(main)/chat/[id]",
+
+      params: {
+        id: friend.id,
+      },
+    });
+  };
+
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
+      contentContainerStyle={
+        styles.scrollContent
+      }
+      showsVerticalScrollIndicator={
+        false
+      }
     >
-      <Pressable
-        style={({ pressed }) => [
-          styles.topBackButton,
-          pressed && styles.pressed,
-        ]}
-        onPress={() => router.back()}
+      <ScreenContainer
+        maxWidth={760}
       >
-        <Text style={styles.topBackButtonText}>
-          ← Voltar
-        </Text>
-      </Pressable>
+        <View style={styles.content}>
+          <Pressable
+            onPress={
+              handleBackToFriends
+            }
+            style={({ pressed }) => [
+              styles.topBackButton,
 
-      <View style={styles.profileCard}>
-        <View style={styles.avatarContainer}>
-          <Image
-            source={{ uri: friend.avatar }}
-            style={styles.avatar}
-          />
+              pressed &&
+                styles.pressed,
+            ]}
+          >
+            <Text
+              style={
+                styles.topBackButtonText
+              }
+            >
+              ← Voltar
+            </Text>
+          </Pressable>
 
           <View
-            style={[
-              styles.statusDot,
-              isOnline
-                ? styles.onlineDot
-                : styles.offlineDot,
-            ]}
-          />
+            style={
+              styles.profileCard
+            }
+          >
+            <View
+              style={
+                styles.avatarContainer
+              }
+            >
+              <Image
+                source={{
+                  uri: friend.avatar,
+                }}
+                style={styles.avatar}
+              />
+
+              <View
+                style={[
+                  styles.statusDot,
+
+                  isOnline
+                    ? styles.onlineDot
+                    : styles.offlineDot,
+                ]}
+              />
+            </View>
+
+            <Text style={styles.name}>
+              {friend.name}
+            </Text>
+
+            <View
+              style={[
+                styles.statusBadge,
+
+                isOnline
+                  ? styles.onlineBadge
+                  : styles.offlineBadge,
+              ]}
+            >
+              <View
+                style={[
+                  styles.statusBadgeDot,
+
+                  isOnline
+                    ? styles.onlineBadgeDot
+                    : styles.offlineBadgeDot,
+                ]}
+              />
+
+              <Text
+                style={[
+                  styles.statusText,
+
+                  isOnline
+                    ? styles.onlineText
+                    : styles.offlineText,
+                ]}
+              >
+                {isOnline
+                  ? "Online"
+                  : "Offline"}
+              </Text>
+            </View>
+
+            <Text
+              style={
+                styles.profileHint
+              }
+            >
+              Amigo da sua rede no
+              HOJÉ OND.
+            </Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              Status
+            </Text>
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+              <View
+                style={
+                  styles.infoIcon
+                }
+              >
+                <Text
+                  style={
+                    styles.infoIconText
+                  }
+                >
+                  {isOnline
+                    ? "🟢"
+                    : "⚫"}
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.infoContent
+                }
+              >
+                <Text
+                  style={
+                    styles.infoTitle
+                  }
+                >
+                  Presença
+                </Text>
+
+                <Text
+                  style={
+                    styles.infoDescription
+                  }
+                >
+                  {isOnline
+                    ? `${friend.name} está online agora.`
+                    : `${friend.name} está offline no momento.`}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.card}>
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              Sua visibilidade
+            </Text>
+
+            <View
+              style={
+                styles.visibilityRow
+              }
+            >
+              <View
+                style={
+                  styles.visibilityIcon
+                }
+              >
+                <Text
+                  style={
+                    styles.visibilityIconText
+                  }
+                >
+                  {visible
+                    ? "👁️"
+                    : "🙈"}
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.infoContent
+                }
+              >
+                <Text
+                  style={
+                    styles.infoTitle
+                  }
+                >
+                  {visible
+                    ? "Visível para amigos"
+                    : "Oculto para amigos"}
+                </Text>
+
+                <Text
+                  style={
+                    styles.infoDescription
+                  }
+                >
+                  {visible
+                    ? "Seus amigos podem ver sua presença."
+                    : "Sua presença está oculta para seus amigos."}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View
+            style={
+              styles.actionsCard
+            }
+          >
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              Ações
+            </Text>
+
+            <Pressable
+              onPress={
+                handleOpenChat
+              }
+              style={({ pressed }) => [
+                styles.messageButton,
+
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={
+                  styles.messageButtonText
+                }
+              >
+                💬 Enviar mensagem
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={
+                handleBackToFriends
+              }
+              style={({ pressed }) => [
+                styles.secondaryButton,
+
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <Text
+                style={
+                  styles.secondaryButtonText
+                }
+              >
+                Voltar para amigos
+              </Text>
+            </Pressable>
+          </View>
         </View>
-
-        <Text style={styles.name}>
-          {friend.name}
-        </Text>
-
-        <Text
-          style={[
-            styles.status,
-            isOnline
-              ? styles.onlineText
-              : styles.offlineText,
-          ]}
-        >
-          {isOnline
-            ? "Online"
-            : "Offline"}
-        </Text>
-      </View>
-
-      <View style={styles.infoCard}>
-        <Text style={styles.sectionTitle}>
-          Informações
-        </Text>
-
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>
-            Status
-          </Text>
-
-          <Text style={styles.infoValue}>
-            {isOnline
-              ? "Online agora"
-              : "Offline"}
-          </Text>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>
-            Presença
-          </Text>
-
-          <Text style={styles.infoValue}>
-            {visible
-              ? "Disponível"
-              : "Oculta"}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.actionsCard}>
-        <Text style={styles.sectionTitle}>
-          Ações
-        </Text>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed && styles.pressed,
-          ]}
-          onPress={() => {}}
-        >
-          <Text style={styles.primaryButtonText}>
-            Adicionar amigo
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            pressed && styles.pressed,
-          ]}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.secondaryButtonText}>
-            Voltar para amigos
-          </Text>
-        </Pressable>
-      </View>
+      </ScreenContainer>
     </ScrollView>
   );
 }
@@ -173,16 +411,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#090909",
   },
 
-  content: {
-    padding: 20,
+  scrollContent: {
+    paddingTop: 20,
     paddingBottom: 50,
+  },
+
+  content: {
+    width: "100%",
   },
 
   topBackButton: {
     alignSelf: "flex-start",
     paddingVertical: 8,
     paddingHorizontal: 4,
-    marginBottom: 14,
+    marginBottom: 12,
   },
 
   topBackButtonText: {
@@ -201,25 +443,26 @@ const styles = StyleSheet.create({
   },
 
   avatarContainer: {
+    width: 112,
+    height: 112,
     position: "relative",
-    marginBottom: 16,
   },
 
   avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
     backgroundColor: "#333333",
   },
 
   statusDot: {
     position: "absolute",
-    right: 4,
-    bottom: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 3,
+    right: 5,
+    bottom: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 4,
     borderColor: "#1B1B1B",
   },
 
@@ -236,12 +479,44 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "800",
     textAlign: "center",
+    marginTop: 18,
   },
 
-  status: {
-    fontSize: 15,
-    fontWeight: "700",
-    marginTop: 6,
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginTop: 10,
+  },
+
+  onlineBadge: {
+    backgroundColor: "#17351D",
+  },
+
+  offlineBadge: {
+    backgroundColor: "#252525",
+  },
+
+  statusBadgeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+
+  onlineBadgeDot: {
+    backgroundColor: "#4CAF50",
+  },
+
+  offlineBadgeDot: {
+    backgroundColor: "#777777",
+  },
+
+  statusText: {
+    fontSize: 12,
+    fontWeight: "800",
   },
 
   onlineText: {
@@ -249,10 +524,17 @@ const styles = StyleSheet.create({
   },
 
   offlineText: {
-    color: "#888888",
+    color: "#999999",
   },
 
-  infoCard: {
+  profileHint: {
+    color: "#888888",
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 12,
+  },
+
+  card: {
     backgroundColor: "#1B1B1B",
     borderRadius: 18,
     padding: 18,
@@ -272,54 +554,90 @@ const styles = StyleSheet.create({
 
   sectionTitle: {
     color: "#FFFFFF",
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "800",
     marginBottom: 14,
   },
 
   infoRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#262626",
+    alignItems: "center",
   },
 
-  infoLabel: {
-    color: "#888888",
-    fontSize: 14,
-    fontWeight: "600",
+  visibilityRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
 
-  infoValue: {
+  infoIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#151515",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+
+  infoIconText: {
+    fontSize: 20,
+  },
+
+  visibilityIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#2A2300",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+
+  visibilityIconText: {
+    fontSize: 20,
+  },
+
+  infoContent: {
     flex: 1,
-    color: "#FFFFFF",
-    fontSize: 14,
-    textAlign: "right",
+    minWidth: 0,
   },
 
-  primaryButton: {
+  infoTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  infoDescription: {
+    color: "#888888",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
+  },
+
+  messageButton: {
+    width: "100%",
     backgroundColor: "#FFC400",
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
   },
 
-  primaryButtonText: {
+  messageButtonText: {
     color: "#000000",
     fontSize: 15,
     fontWeight: "800",
   },
 
   secondaryButton: {
+    width: "100%",
     backgroundColor: "#151515",
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#333333",
     paddingVertical: 16,
     alignItems: "center",
     marginTop: 12,
-    borderWidth: 1,
-    borderColor: "#333333",
   },
 
   secondaryButtonText: {
@@ -328,32 +646,53 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  backButton: {
-    backgroundColor: "#FFC400",
-    borderRadius: 14,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-  },
-
-  backButtonText: {
-    color: "#000000",
-    fontSize: 15,
-    fontWeight: "800",
+  errorScreen: {
+    flex: 1,
+    backgroundColor: "#090909",
+    justifyContent: "center",
   },
 
   errorContainer: {
-    flex: 1,
-    backgroundColor: "#090909",
-    alignItems: "center",
-    justifyContent: "center",
+    width: "100%",
+    backgroundColor: "#1B1B1B",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#292929",
     padding: 24,
+    alignItems: "center",
+  },
+
+  errorIcon: {
+    fontSize: 42,
   },
 
   errorTitle: {
     color: "#FFFFFF",
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: "800",
-    marginBottom: 20,
+    textAlign: "center",
+    marginTop: 14,
+  },
+
+  errorText: {
+    color: "#888888",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 8,
+  },
+
+  backButton: {
+    backgroundColor: "#FFC400",
+    borderRadius: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    marginTop: 20,
+  },
+
+  backButtonText: {
+    color: "#000000",
+    fontSize: 14,
+    fontWeight: "800",
   },
 
   pressed: {

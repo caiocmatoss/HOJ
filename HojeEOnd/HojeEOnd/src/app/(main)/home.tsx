@@ -1,11 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
-  FlatList,
   ScrollView,
   StyleSheet,
   Text,
-  View
+  View,
 } from "react-native";
 
 import { CategoryChip } from "@/components/home/CategoryChip";
@@ -15,49 +14,110 @@ import { HeaderHome } from "@/components/home/HeaderHome";
 import { LiveMapContainer } from "@/components/home/LiveMapContainer";
 import { SearchBar } from "@/components/home/SearchBar";
 import { VenueCard } from "@/components/home/VenueCard";
+import NearbyFriends from "@/components/NearbyFriends";
 
 import { events } from "@/data/events";
 import { venues } from "@/data/venues";
 
+const categories = [
+  "Todos",
+  "Festival",
+  "Música",
+  "Festa",
+  "Gastronomia",
+  "Cinema",
+  "Comida",
+];
+
 export default function HomeScreen() {
-  // Estado para busca local
   const [searchQuery, setSearchQuery] = useState("");
-  
-  // Estado para categoria selecionada
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] =
+    useState("Todos");
 
-  // Filtrar eventos que estão acontecendo agora (simulação)
-  const liveEvents = events.filter(event => event.isLive);
+  const normalizedQuery =
+    searchQuery.trim().toLowerCase();
 
-  // Eventos próximos (não ao vivo)
-  const upcomingEvents = events
-    .filter(event => !event.isLive)
-    .filter(event => 
-      (!searchQuery || 
-       event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-       event.venueName.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
-    .slice(0, 3);
+  const filteredEvents = useMemo(() => {
+    return events.filter((event) => {
+      const matchesSearch =
+        normalizedQuery.length === 0 ||
+        event.title
+          .toLowerCase()
+          .includes(normalizedQuery) ||
+        event.venueName
+          .toLowerCase()
+          .includes(normalizedQuery) ||
+        event.category
+          .toLowerCase()
+          .includes(normalizedQuery);
 
-  // Locais populares (simulação baseada em ocupação)
-  const popularVenues = venues
-    .filter(venue => 
-      (!searchQuery || 
-       venue.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-       venue.category.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
-    .sort((a, b) => b.occupancy - a.occupancy)
-    .slice(0, 3);
+      const matchesCategory =
+        selectedCategory === "Todos" ||
+        event.category === selectedCategory;
 
-  // Obter todas as categorias únicas
-  const categories = Array.from(
-    new Set(events.map(event => event.category))
+      return (
+        matchesSearch &&
+        matchesCategory
+      );
+    });
+  }, [
+    normalizedQuery,
+    selectedCategory,
+  ]);
+
+  const filteredVenues = useMemo(() => {
+    return venues.filter((venue) => {
+      const matchesSearch =
+        normalizedQuery.length === 0 ||
+        venue.name
+          .toLowerCase()
+          .includes(normalizedQuery) ||
+        venue.category
+          .toLowerCase()
+          .includes(normalizedQuery);
+
+      const matchesCategory =
+        selectedCategory === "Todos" ||
+        venue.category === selectedCategory;
+
+      return (
+        matchesSearch &&
+        matchesCategory
+      );
+    });
+  }, [
+    normalizedQuery,
+    selectedCategory,
+  ]);
+
+  const liveEvents = filteredEvents.filter(
+    (event) => event.isLive,
   );
+
+  const upcomingEvents = filteredEvents
+    .filter((event) => !event.isLive)
+    .slice(0, 6);
+
+  const popularVenues = [...filteredVenues]
+    .sort(
+      (a, b) =>
+        b.occupancy - a.occupancy,
+    )
+    .slice(0, 6);
+
+  const nearbyVenues = [...filteredVenues]
+    .sort(
+      (a, b) =>
+        parseDistance(a.distance) -
+        parseDistance(b.distance),
+    )
+    .slice(0, 6);
 
   return (
     <View style={styles.page}>
       <ScrollView
         style={styles.container}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
         <HeaderHome />
@@ -66,7 +126,7 @@ export default function HomeScreen() {
           Qual vai ser sua noite?
         </Text>
 
-        <SearchBar 
+        <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -78,19 +138,20 @@ export default function HomeScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          contentContainerStyle={
+            styles.horizontalContent
+          }
         >
-          <CategoryChip
-            title="Todas"
-            active={!selectedCategory}
-            onPress={() => setSelectedCategory(null)}
-          />
-          
           {categories.map((category) => (
             <CategoryChip
               key={category}
               title={category}
-              active={selectedCategory === category}
-              onPress={() => setSelectedCategory(category)}
+              active={
+                selectedCategory === category
+              }
+              onPress={() =>
+                setSelectedCategory(category)
+              }
             />
           ))}
         </ScrollView>
@@ -106,27 +167,30 @@ export default function HomeScreen() {
         </Text>
 
         {liveEvents.length > 0 ? (
-          <FlatList
-            data={liveEvents}
-            renderItem={({ item }) => (
-              <EventCard
-                id={item.id}
-                title={item.title}
-                image={item.image}
-                venueName={item.venueName}
-                time={item.time}
-                category={item.category}
-                price={item.price}
-                attendees={item.attendees}
-                isLive={item.isLive}
-              />
-            )}
-            keyExtractor={(item) => item.id}
+          <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-          />
+            contentContainerStyle={
+              styles.horizontalContent
+            }
+          >
+            {liveEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                id={event.id}
+                title={event.title}
+                image={event.image}
+                venueName={event.venueName}
+                time={event.time}
+                category={event.category}
+                price={event.price}
+                attendees={event.attendees}
+                isLive={event.isLive}
+              />
+            ))}
+          </ScrollView>
         ) : (
-          <Text style={styles.noEvents}>Nenhum evento ao vivo no momento</Text>
+          <EmptyMessage text="Nenhum evento ao vivo no momento." />
         )}
 
         <Text style={styles.section}>
@@ -134,27 +198,59 @@ export default function HomeScreen() {
         </Text>
 
         {upcomingEvents.length > 0 ? (
-          <FlatList
-            data={upcomingEvents}
-            renderItem={({ item }) => (
-              <EventCard
-                id={item.id}
-                title={item.title}
-                image={item.image}
-                venueName={item.venueName}
-                time={item.time}
-                category={item.category}
-                price={item.price}
-                attendees={item.attendees}
-                isLive={item.isLive}
-              />
-            )}
-            keyExtractor={(item) => item.id}
+          <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-          />
+            contentContainerStyle={
+              styles.horizontalContent
+            }
+          >
+            {upcomingEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                id={event.id}
+                title={event.title}
+                image={event.image}
+                venueName={event.venueName}
+                time={event.time}
+                category={event.category}
+                price={event.price}
+                attendees={event.attendees}
+                isLive={event.isLive}
+              />
+            ))}
+          </ScrollView>
         ) : (
-          <Text style={styles.noEvents}>Nenhum evento próximo</Text>
+          <EmptyMessage text="Nenhum evento encontrado." />
+        )}
+
+        <Text style={styles.section}>
+          Locais próximos
+        </Text>
+
+        {nearbyVenues.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={
+              styles.horizontalContent
+            }
+          >
+            {nearbyVenues.map((venue) => (
+              <VenueCard
+                key={venue.id}
+                id={venue.id}
+                name={venue.name}
+                category={venue.category}
+                distance={venue.distance}
+                occupancy={venue.occupancy}
+                status={venue.status}
+                image={venue.image}
+              />
+            ))}
+          </ScrollView>
+        ) : (
+          <EmptyMessage text="Nenhum local encontrado." />
         )}
 
         <Text style={styles.section}>
@@ -162,26 +258,35 @@ export default function HomeScreen() {
         </Text>
 
         {popularVenues.length > 0 ? (
-          <FlatList
-            data={popularVenues}
-            renderItem={({ item }) => (
-              <VenueCard
-                id={item.id}
-                name={item.name}
-                category={item.category}
-                distance={item.distance}
-                occupancy={item.occupancy}
-                status={item.status}
-                image={item.image}
-              />
-            )}
-            keyExtractor={(item) => item.id}
+          <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-          />
+            contentContainerStyle={
+              styles.horizontalContent
+            }
+          >
+            {popularVenues.map((venue) => (
+              <VenueCard
+                key={venue.id}
+                id={venue.id}
+                name={venue.name}
+                category={venue.category}
+                distance={venue.distance}
+                occupancy={venue.occupancy}
+                status={venue.status}
+                image={venue.image}
+              />
+            ))}
+          </ScrollView>
         ) : (
-          <Text style={styles.noEvents}>Nenhum local disponível</Text>
+          <EmptyMessage text="Nenhum local popular encontrado." />
         )}
+
+        <Text style={styles.section}>
+          Amigos próximos
+        </Text>
+
+        <NearbyFriends />
       </ScrollView>
 
       <FloatingButton />
@@ -189,37 +294,74 @@ export default function HomeScreen() {
   );
 }
 
+function parseDistance(distance: string) {
+  const parsed = Number.parseFloat(
+    distance.replace(",", "."),
+  );
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : Number.POSITIVE_INFINITY;
+}
+
+function EmptyMessage({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.noEvents}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#090909",
-    padding: 24,
-  },
-
-  greeting: {
-    color: "#FFF",
-    fontSize: 26,
-    fontWeight: "700",
-    marginTop: 25,
-  },
-
-  section: {
-    color: "#FFF",
-    fontSize: 22,
-    fontWeight: "700",
-    marginTop: 30,
-    marginBottom: 15,
-  },
-
   page: {
     flex: 1,
     backgroundColor: "#090909",
   },
 
+  container: {
+    flex: 1,
+  },
+
+  content: {
+    paddingHorizontal: 20,
+    paddingBottom: 120,
+  },
+
+  greeting: {
+    color: "#FFFFFF",
+    fontSize: 27,
+    fontWeight: "800",
+    marginTop: 24,
+  },
+
+  section: {
+    color: "#FFFFFF",
+    fontSize: 21,
+    fontWeight: "800",
+    marginTop: 30,
+    marginBottom: 14,
+  },
+
+  horizontalContent: {
+    paddingRight: 20,
+  },
+
+  emptyContainer: {
+    backgroundColor: "#151515",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#242424",
+  },
+
   noEvents: {
-    color: "#AAA",
-    textAlign: "center",
-    marginTop: 20,
-    marginBottom: 20,
+    color: "#999999",
+    fontSize: 14,
   },
 });

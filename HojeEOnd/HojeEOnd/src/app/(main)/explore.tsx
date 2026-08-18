@@ -1,273 +1,506 @@
+import { useMemo, useState } from "react";
 import {
   FlatList,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
-  View
+  View,
 } from "react-native";
-
-import { useState } from "react";
 
 import { CategoryChip } from "@/components/home/CategoryChip";
 import { EventCard } from "@/components/home/EventCard";
 import { SearchBar } from "@/components/home/SearchBar";
+import { VenueCard } from "@/components/home/VenueCard";
 
-import { events } from "@/data/events";
+import { events, type Event } from "@/data/events";
+import { venues } from "@/data/venues";
+
+type SortOption = "nearest" | "popular" | "recent";
+
+const categories = [
+  "Todos",
+  "Bares",
+  "Baladas",
+  "Shows",
+  "Festivais",
+  "Restaurantes",
+  "Música",
+  "Gastronomia",
+  "Festa",
+  "Festival",
+  "Cinema",
+];
+
+const sortOptions: {
+  value: SortOption;
+  label: string;
+}[] = [
+  {
+    value: "nearest",
+    label: "Mais próximos",
+  },
+  {
+    value: "popular",
+    label: "Mais populares",
+  },
+  {
+    value: "recent",
+    label: "Mais recentes",
+  },
+];
 
 export default function ExploreScreen() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [sortBy, setSortBy] = useState<"nearest" | "popular" | "recent">("nearest");
+  const [selectedCategory, setSelectedCategory] =
+    useState("Todos");
+  const [sortBy, setSortBy] =
+    useState<SortOption>("nearest");
+  const [showFilters, setShowFilters] =
+    useState(true);
 
-  // Obter todas as categorias únicas
-  const categories = Array.from(
-    new Set(events.map(event => event.category))
-  );
+  const normalizedQuery =
+    searchQuery.trim().toLowerCase();
 
-  // Filtrar eventos com base na busca e categoria
-  const filteredEvents = events.filter(event => {
-    const matchesSearch = 
-      !searchQuery || 
-      event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.venueName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesCategory = 
-      !selectedCategory || 
-      event.category === selectedCategory;
-    
-    return matchesSearch && matchesCategory;
-  });
+  const filteredEvents = useMemo(() => {
+    const filtered = events.filter((event) => {
+      const matchesSearch =
+        normalizedQuery.length === 0 ||
+        event.title
+          .toLowerCase()
+          .includes(normalizedQuery) ||
+        event.venueName
+          .toLowerCase()
+          .includes(normalizedQuery) ||
+        event.category
+          .toLowerCase()
+          .includes(normalizedQuery);
 
-  // Ordenar eventos com base na seleção
-  const sortedEvents = [...filteredEvents].sort((a, b) => {
-    switch (sortBy) {
-      case "nearest":
-        // Para eventos próximos, assumimos que estão ordenados por data crescente
-        return new Date(a.time).getTime() - new Date(b.time).getTime();
-      case "popular":
-        // Ordenar por número de participantes (mais populares primeiro)
-        return b.attendees - a.attendees;
-      case "recent":
-        // Ordenar por data mais recente
-        return new Date(b.time).getTime() - new Date(a.time).getTime();
-      default:
-        return 0;
-    }
-  });
+      const matchesCategory =
+        selectedCategory === "Todos" ||
+        event.category === selectedCategory;
+
+      return (
+        matchesSearch &&
+        matchesCategory
+      );
+    });
+
+    return [...filtered].sort(
+      (a, b) =>
+        compareEvents(a, b, sortBy)
+    );
+  }, [
+    normalizedQuery,
+    selectedCategory,
+    sortBy,
+  ]);
+
+  const filteredVenues = useMemo(() => {
+    const filtered = venues.filter((venue) => {
+      const matchesSearch =
+        normalizedQuery.length === 0 ||
+        venue.name
+          .toLowerCase()
+          .includes(normalizedQuery) ||
+        venue.category
+          .toLowerCase()
+          .includes(normalizedQuery);
+
+      const matchesCategory =
+        selectedCategory === "Todos" ||
+        venue.category === selectedCategory;
+
+      return (
+        matchesSearch &&
+        matchesCategory
+      );
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "popular") {
+        return b.occupancy - a.occupancy;
+      }
+
+      return (
+        parseDistance(a.distance) -
+        parseDistance(b.distance)
+      );
+    });
+  }, [
+    normalizedQuery,
+    selectedCategory,
+    sortBy,
+  ]);
+
+  const hasResults =
+    filteredEvents.length > 0 ||
+    filteredVenues.length > 0;
 
   return (
-    <View style={styles.page}>
-      <ScrollView
-        style={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.title}>
-          Explorar Eventos
-        </Text>
-
-        <SearchBar 
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-
-        <View style={styles.filtersContainer}>
-          <TouchableOpacity 
-            style={styles.filterButton}
-            onPress={() => setShowFilters(!showFilters)}
-          >
-            <Text style={styles.filterButtonText}>
-              {showFilters ? "Ocultar Filtros" : "Mostrar Filtros"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {showFilters && (
-          <View style={styles.filters}>
-            <Text style={styles.section}>
-              Categorias
-            </Text>
-            
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-            >
-              <CategoryChip
-                title="Todas"
-                active={!selectedCategory}
-                onPress={() => setSelectedCategory(null)}
-              />
-              
-              {categories.map((category) => (
-                <CategoryChip
-                  key={category}
-                  title={category}
-                  active={selectedCategory === category}
-                  onPress={() => setSelectedCategory(category)}
-                />
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        <View style={styles.sortContainer}>
-          <Text style={styles.section}>
-            Ordenar por:
-          </Text>
-          <View style={styles.sortButtons}>
-            <TouchableOpacity 
-              style={[styles.sortButton, sortBy === "nearest" && styles.sortButtonActive]}
-              onPress={() => setSortBy("nearest")}
-            >
-              <Text style={[styles.sortButtonText, sortBy === "nearest" && styles.sortButtonTextActive]}>
-                Mais próximos
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.sortButton, sortBy === "popular" && styles.sortButtonActive]}
-              onPress={() => setSortBy("popular")}
-            >
-              <Text style={[styles.sortButtonText, sortBy === "popular" && styles.sortButtonTextActive]}>
-                Mais populares
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.sortButton, sortBy === "recent" && styles.sortButtonActive]}
-              onPress={() => setSortBy("recent")}
-            >
-              <Text style={[styles.sortButtonText, sortBy === "recent" && styles.sortButtonTextActive]}>
-                Mais recentes
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Text style={styles.section}>
-          Resultados ({sortedEvents.length})
-        </Text>
-
-        {sortedEvents.length > 0 ? (
-          <FlatList
-            data={sortedEvents}
-            renderItem={({ item }) => (
-              <EventCard
-                id={item.id}
-                title={item.title}
-                image={item.image}
-                venueName={item.venueName}
-                time={item.time}
-                category={item.category}
-                price={item.price}
-                attendees={item.attendees}
-                isLive={item.isLive}
-              />
-            )}
-            keyExtractor={(item) => item.id}
-            showsVerticalScrollIndicator={false}
+    <View style={styles.screen}>
+      <FlatList
+        data={filteredEvents}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <EventCard
+            id={item.id}
+            title={item.title}
+            image={item.image}
+            venueName={item.venueName}
+            time={item.time}
+            category={item.category}
+            price={item.price}
+            attendees={item.attendees}
+            isLive={item.isLive}
           />
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              Nenhum evento encontrado
-            </Text>
-          </View>
         )}
-      </ScrollView>
+        numColumns={1}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        ListHeaderComponent={
+          <View>
+            <Text style={styles.title}>
+              Explorar
+            </Text>
+
+            <Text style={styles.subtitle}>
+              Encontre o que está acontecendo hoje.
+            </Text>
+
+            <SearchBar
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.filterButton,
+                pressed && styles.pressed,
+              ]}
+              onPress={() =>
+                setShowFilters((current) => !current)
+              }
+            >
+              <Text style={styles.filterButtonText}>
+                {showFilters
+                  ? "Ocultar filtros"
+                  : "Mostrar filtros"}
+              </Text>
+            </Pressable>
+
+            {showFilters && (
+              <>
+                <Text style={styles.sectionTitle}>
+                  Categorias
+                </Text>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={
+                    styles.horizontalContent
+                  }
+                >
+                  {categories.map((category) => (
+                    <CategoryChip
+                      key={category}
+                      title={category}
+                      active={
+                        selectedCategory ===
+                        category
+                      }
+                      onPress={() =>
+                        setSelectedCategory(
+                          category
+                        )
+                      }
+                    />
+                  ))}
+                </ScrollView>
+
+                <Text style={styles.sectionTitle}>
+                  Ordenar por
+                </Text>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={
+                    styles.horizontalContent
+                  }
+                >
+                  {sortOptions.map((option) => (
+                    <Pressable
+                      key={option.value}
+                      onPress={() =>
+                        setSortBy(option.value)
+                      }
+                      style={({ pressed }) => [
+                        styles.sortChip,
+                        sortBy ===
+                          option.value &&
+                          styles.sortChipActive,
+                        pressed &&
+                          styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.sortChipText,
+                          sortBy ===
+                            option.value &&
+                            styles.sortChipTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            {!hasResults && (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyTitle}>
+                  Nada encontrado
+                </Text>
+
+                <Text style={styles.emptyText}>
+                  Tente outra busca ou escolha outra
+                  categoria.
+                </Text>
+
+                <Pressable
+                  style={styles.clearButton}
+                  onPress={() => {
+                    setSearchQuery("");
+                    setSelectedCategory("Todos");
+                  }}
+                >
+                  <Text style={styles.clearButtonText}>
+                    Limpar filtros
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {filteredVenues.length > 0 && (
+              <View style={styles.venuesSection}>
+                <Text style={styles.sectionTitle}>
+                  Locais
+                </Text>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={
+                    styles.horizontalContent
+                  }
+                >
+                  {filteredVenues.map((venue) => (
+                    <VenueCard
+                      key={venue.id}
+                      id={venue.id}
+                      name={venue.name}
+                      category={venue.category}
+                      distance={venue.distance}
+                      occupancy={venue.occupancy}
+                      status={venue.status}
+                      image={venue.image}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {filteredEvents.length > 0 && (
+              <Text style={styles.sectionTitle}>
+                Eventos
+              </Text>
+            )}
+          </View>
+        }
+        ListEmptyComponent={
+          hasResults ? null : null
+        }
+      />
     </View>
   );
 }
 
+function compareEvents(
+  a: Event,
+  b: Event,
+  sortBy: SortOption
+) {
+  switch (sortBy) {
+    case "nearest":
+      return (
+        parseDistance(a.distance) -
+        parseDistance(b.distance)
+      );
+
+    case "popular":
+      return b.attendees - a.attendees;
+
+    case "recent":
+      return (
+        getEventDateTime(b) -
+        getEventDateTime(a)
+      );
+
+    default:
+      return 0;
+  }
+}
+
+function getEventDateTime(
+  event: Event
+) {
+  const value = new Date(
+    `${event.date}T${event.time}`
+  ).getTime();
+
+  return Number.isFinite(value)
+    ? value
+    : 0;
+}
+
+function parseDistance(
+  distance: string
+) {
+  const value = Number.parseFloat(
+    distance.replace(",", ".")
+  );
+
+  return Number.isFinite(value)
+    ? value
+    : Number.POSITIVE_INFINITY;
+}
+
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: "#090909",
-    padding: 24,
+  },
+
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 120,
   },
 
   title: {
-    color: "#FFF",
-    fontSize: 26,
-    fontWeight: "700",
-    marginTop: 25,
+    color: "#FFFFFF",
+    fontSize: 30,
+    fontWeight: "800",
   },
 
-  section: {
-    color: "#FFF",
-    fontSize: 22,
-    fontWeight: "700",
-    marginTop: 30,
-    marginBottom: 15,
-  },
-
-  page: {
-    flex: 1,
-    backgroundColor: "#090909",
-  },
-
-  filtersContainer: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 10,
+  subtitle: {
+    color: "#999999",
+    fontSize: 15,
+    marginTop: 6,
+    marginBottom: 4,
   },
 
   filterButton: {
-    backgroundColor: "#FFC400",
+    alignSelf: "flex-start",
+    backgroundColor: "#1B1B1B",
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingVertical: 10,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#292929",
   },
 
   filterButtonText: {
-    color: "#000",
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "700",
   },
 
-  filters: {
-    marginTop: 15,
+  sectionTitle: {
+    color: "#FFFFFF",
+    fontSize: 21,
+    fontWeight: "800",
+    marginTop: 28,
+    marginBottom: 14,
   },
 
-  sortContainer: {
-    marginTop: 15,
+  horizontalContent: {
+    paddingRight: 20,
   },
 
-  sortButtons: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 10,
-  },
-
-  sortButton: {
-    backgroundColor: "#333",
+  sortChip: {
+    backgroundColor: "#1B1B1B",
+    borderRadius: 24,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingVertical: 10,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#292929",
   },
 
-  sortButtonActive: {
+  sortChipActive: {
     backgroundColor: "#FFC400",
+    borderColor: "#FFC400",
   },
 
-  sortButtonText: {
-    color: "#FFF",
-    fontWeight: "700",
+  sortChipText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
 
-  sortButtonTextActive: {
-    color: "#000",
+  sortChipTextActive: {
+    color: "#000000",
+    fontWeight: "800",
+  },
+
+  pressed: {
+    opacity: 0.75,
+  },
+
+  venuesSection: {
+    marginBottom: 8,
   },
 
   emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingTop: 50,
+    backgroundColor: "#151515",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#292929",
+    padding: 22,
+    marginTop: 24,
+  },
+
+  emptyTitle: {
+    color: "#FFFFFF",
+    fontSize: 19,
+    fontWeight: "800",
   },
 
   emptyText: {
-    color: "#AAA",
-    fontSize: 18,
+    color: "#999999",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+
+  clearButton: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FFC400",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 16,
+  },
+
+  clearButtonText: {
+    color: "#000000",
+    fontWeight: "800",
   },
 });

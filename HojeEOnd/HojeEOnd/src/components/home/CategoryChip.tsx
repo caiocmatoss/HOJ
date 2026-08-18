@@ -1,10 +1,10 @@
 import {
   Pressable,
   StyleSheet,
-  Text
+  Text,
 } from "react-native";
 
-interface Props {
+interface CategoryChipProps {
   title: string;
   active?: boolean;
   onPress?: () => void;
@@ -13,60 +13,60 @@ interface Props {
 export function CategoryChip({
   title,
   active = false,
-  onPress = () => {}
-}: Props){
-
- return (
-
-  <Pressable
-    style={[
-      styles.container,
-      active && styles.active
-    ]}
-    onPress={onPress}
-  >
-
-    <Text
-      style={[
-        styles.text,
-        active && styles.activeText
+  onPress = () => {},
+}: CategoryChipProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.container,
+        active && styles.active,
+        pressed && styles.pressed,
       ]}
     >
-      {title}
-    </Text>
-
-  </Pressable>
-
- );
-
+      <Text
+        style={[
+          styles.text,
+          active && styles.activeText,
+        ]}
+      >
+        {title}
+      </Text>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    backgroundColor: "#1B1B1B",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 30,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#292929",
+  },
 
- container:{
-  backgroundColor:"#1B1B1B",
-  paddingHorizontal:18,
-  paddingVertical:10,
-  borderRadius:30,
-  marginRight:10,
- },
+  active: {
+    backgroundColor: "#FFC400",
+    borderColor: "#FFC400",
+  },
 
- active:{
-  backgroundColor:"#FFC400",
- },
+  pressed: {
+    opacity: 0.75,
+  },
 
- text:{
-  color:"#FFF",
-  fontSize:14,
- },
+  text: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 
- activeText:{
-  color:"#000",
-  fontWeight:"700",
- }
-
+  activeText: {
+    color: "#000000",
+    fontWeight: "800",
+  },
 });
-
 
 
 

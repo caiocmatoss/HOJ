@@ -1,71 +1,113 @@
+import { Ionicons } from "@expo/vector-icons";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+
 import { useCheckinStore } from "@/store/checkin-store";
 import { useFavoriteStore } from "@/store/favorite-store";
-import { AntDesign, Entypo } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from "react-native";
 
 interface VenueActionsProps {
   venueId: string;
-  isFavorite: boolean;
-  currentVenueId: string | null;
 }
 
-export function VenueActions({ 
-  venueId, 
-  isFavorite, 
-  currentVenueId 
+export function VenueActions({
+  venueId,
 }: VenueActionsProps) {
-  const { addFavorite, removeFavorite } = useFavoriteStore();
-  const { checkin, checkout } = useCheckinStore();
+  const isFavorite = useFavoriteStore(
+    (state) => state.isFavorite(venueId),
+  );
 
-  const handleFavoritePress = () => {
-    if (isFavorite) {
-      removeFavorite(venueId);
-    } else {
-      addFavorite(venueId);
-    }
-  };
+  const toggleFavorite = useFavoriteStore(
+    (state) => state.toggleFavorite,
+  );
 
-  const handleCheckinPress = () => {
-    if (currentVenueId === venueId) {
-      checkout();
-    } else {
-      checkin(venueId);
-    }
-  };
+  const currentVenue = useCheckinStore(
+    (state) => state.currentVenue,
+  );
+
+  const checkin = useCheckinStore(
+    (state) => state.checkin,
+  );
+
+  const checkout = useCheckinStore(
+    (state) => state.checkout,
+  );
+
+  const isCheckedIn =
+    currentVenue === venueId;
 
   return (
     <View style={styles.container}>
-      <Pressable 
-        onPress={handleFavoritePress}
-        style={styles.actionButton}
+      <Pressable
+        onPress={() => toggleFavorite(venueId)}
+        style={({ pressed }) => [
+          styles.actionButton,
+          isFavorite && styles.favoriteActive,
+          pressed && styles.pressed,
+        ]}
       >
-        <AntDesign 
-          name="heart" 
-          size={24} 
-          color={isFavorite ? "#FF4D4D" : "#FFF"} 
+        <Ionicons
+          name="heart"
+          size={22}
+          color={
+            isFavorite
+              ? "#000000"
+              : "#FFC400"
+          }
         />
-        <Text style={styles.actionText}>
-          {isFavorite ? "Favorito" : "Favoritar"}
+
+        <Text
+          style={[
+            styles.actionText,
+            isFavorite && styles.favoriteText,
+          ]}
+        >
+          {isFavorite
+            ? "Favoritado"
+            : "Favoritar"}
         </Text>
       </Pressable>
 
-      <Pressable 
-        onPress={handleCheckinPress}
-        style={[
-          styles.actionButton, 
-          currentVenueId === venueId && styles.checkedInButton
+      <Pressable
+        onPress={() =>
+          isCheckedIn
+            ? checkout()
+            : checkin(venueId)
+        }
+        style={({ pressed }) => [
+          styles.actionButton,
+          isCheckedIn &&
+            styles.checkinActive,
+          pressed && styles.pressed,
         ]}
       >
-        <Entypo 
-          name="location-pin" 
-          size={24} 
-          color={currentVenueId === venueId ? "#4CAF50" : "#FFF"} 
+        <Ionicons
+          name={
+            isCheckedIn
+              ? "location"
+              : "location-outline"
+          }
+          size={22}
+          color={
+            isCheckedIn
+              ? "#FFFFFF"
+              : "#FFC400"
+          }
         />
-        <Text style={[
-          styles.actionText, 
-          currentVenueId === venueId && styles.checkedInText
-        ]}>
-          {currentVenueId === venueId ? "Você está aqui" : "Check-in"}
+
+        <Text
+          style={[
+            styles.actionText,
+            isCheckedIn &&
+              styles.checkinText,
+          ]}
+        >
+          {isCheckedIn
+            ? "Você está aqui"
+            : "Fazer check-in"}
         </Text>
       </Pressable>
     </View>
@@ -74,30 +116,49 @@ export function VenueActions({
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
+    flexDirection: "row",
+    gap: 12,
     marginTop: 20,
-    marginBottom: 20,
   },
+
   actionButton: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#2D2D2D',
-    minWidth: 120,
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FFC400",
+    backgroundColor: "#151515",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
   },
-  checkedInButton: {
-    backgroundColor: '#4CAF50',
+
+  favoriteActive: {
+    backgroundColor: "#FFC400",
   },
+
+  checkinActive: {
+    backgroundColor: "#2E7D32",
+    borderColor: "#2E7D32",
+  },
+
   actionText: {
-    color: '#FFF',
-    marginTop: 5,
+    color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "700",
   },
-  checkedInText: {
-    color: '#000',
+
+  favoriteText: {
+    color: "#000000",
+  },
+
+  checkinText: {
+    color: "#FFFFFF",
+  },
+
+  pressed: {
+    opacity: 0.8,
   },
 });

@@ -1,7 +1,7 @@
 import {
-    StyleSheet,
-    TextInput,
-    View
+  StyleSheet,
+  TextInput,
+  View,
 } from "react-native";
 
 interface SearchBarProps {
@@ -9,42 +9,42 @@ interface SearchBarProps {
   onChangeText?: (text: string) => void;
 }
 
-export function SearchBar({ 
-  value = "", 
-  onChangeText = () => {} 
-}: SearchBarProps){
-
- return (
-
-  <View style={styles.container}>
-
-   <TextInput
-    placeholder="Buscar eventos, bares..."
-    placeholderTextColor="#777"
-    style={styles.input}
-    value={value}
-    onChangeText={onChangeText}
-   />
-
-  </View>
-
- );
-
+export function SearchBar({
+  value = "",
+  onChangeText = () => {},
+}: SearchBarProps) {
+  return (
+    <View style={styles.container}>
+      <TextInput
+        placeholder="Buscar eventos, bares, shows..."
+        placeholderTextColor="#777777"
+        style={styles.input}
+        value={value}
+        onChangeText={onChangeText}
+        returnKeyType="search"
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+    </View>
+  );
 }
 
-const styles=StyleSheet.create({
+const styles = StyleSheet.create({
+  container: {
+    width: "100%",
+    marginTop: 20,
+    marginBottom: 4,
+  },
 
- container:{
-  marginTop:20,
- },
-
- input:{
-  backgroundColor:"#1B1B1B",
-  color:"#FFF",
-  padding:16,
-  borderRadius:18,
-  fontSize:16,
-  height: 50
- }
-
+  input: {
+    width: "100%",
+    height: 52,
+    backgroundColor: "#1B1B1B",
+    color: "#FFFFFF",
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#262626",
+  },
 });

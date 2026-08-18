@@ -1,48 +1,30 @@
 import { create } from "zustand";
 
-
-type CheckinStore = {
-
+interface CheckinStore {
   currentVenue: string | null;
-
-
-  checkin: (
-    venueId: string
-  ) => void;
-
-
+  checkedInAt: string | null;
+  checkin: (venueId: string) => void;
   checkout: () => void;
+  isCheckedIn: (venueId: string) => boolean;
+}
 
-};
-
-
-
-export const useCheckinStore = create<CheckinStore>(
-
-  (set) => ({
-
+export const useCheckinStore =
+  create<CheckinStore>((set, get) => ({
     currentVenue: null,
+    checkedInAt: null,
 
-
-    checkin: (venueId: string) =>
-
+    checkin: (venueId) =>
       set({
-
         currentVenue: venueId,
-
+        checkedInAt: new Date().toISOString(),
       }),
-
-
 
     checkout: () =>
-
       set({
-
         currentVenue: null,
-
+        checkedInAt: null,
       }),
 
-
-  })
-
-);
+    isCheckedIn: (venueId) =>
+      get().currentVenue === venueId,
+  }));

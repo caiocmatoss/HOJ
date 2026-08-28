@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Image,
@@ -10,10 +10,10 @@ import {
 
 import { router } from "expo-router";
 
-import { friends } from "@/data/friends";
-import { locations } from "@/data/locations";
+import { getNearbyFriends } from "@/services/api";
 
 import { useLocationStore } from "@/store/location-store";
+import { usePresenceStore } from "@/store/presence-store";
 
 import {
   calculateDistance,
@@ -24,9 +24,39 @@ interface NearbyFriendsProps {
   limit?: number;
 }
 
+interface NearbyFriend {
+  id: string;
+  name: string;
+  avatar: string | null;
+  status: "online" | "offline";
+  distanceMeters: number | null;
+  displayDistance: string;
+}
+
+type NearbyApiFriend = Awaited<ReturnType<typeof getNearbyFriends>>["friends"][number];
+
 export default function NearbyFriends({
   limit = 5,
 }: NearbyFriendsProps) {
+  const [friends, setFriends] = useState<NearbyApiFriend[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadFriends = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await getNearbyFriends(10);
+      setFriends(response.friends);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar os amigos próximos.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadFriends(); }, [loadFriends]);
+
   const latitude = useLocationStore(
     (state) => state.latitude,
   );
@@ -35,81 +65,146 @@ export default function NearbyFriends({
     (state) => state.longitude,
   );
 
+  const friendLocations = usePresenceStore(
+    (state) => state.friendLocations,
+  );
+
+  const presenceStatuses = usePresenceStore(
+    (state) => state.statuses,
+  );
+
   const hasUserLocation =
     latitude !== null &&
     longitude !== null;
 
-  const nearbyFriends = useMemo(() => {
-    const result = friends.map((friend) => {
-      const friendLocation =
-        locations.find(
-          (location) =>
-            location.userId === friend.id,
-        );
+  const nearbyFriends = useMemo<NearbyFriend[]>(
+    () => {
+      const result: NearbyFriend[] =
+        friends.map((friend) => {
+          const friendLocation =
+            friendLocations[friend.id];
 
-      if (
-        !hasUserLocation ||
-        !friendLocation
-      ) {
-        return {
-          ...friend,
-          distanceMeters: null,
-          displayDistance:
-            "Distância indisponível",
-        };
-      }
+          const presenceStatus =
+            presenceStatuses[friend.id];
 
-      const distanceMeters =
-        calculateDistance(
-          latitude,
-          longitude,
-          friendLocation.latitude,
-          friendLocation.longitude,
-        );
+          /*
+           * A localização agora vem exclusivamente
+           * do PresenceStore, alimentado pelo Socket.IO.
+           *
+           * Não utilizamos mais:
+           *
+           * src/data/locations.ts
+           *
+           * para calcular a posição realtime.
+           */
 
-      return {
-        ...friend,
-        distanceMeters,
-        displayDistance:
-          formatDistance(
+          if (
+            !hasUserLocation ||
+            latitude === null ||
+            longitude === null ||
+            !friendLocation
+          ) {
+            return {
+              id: friend.id,
+              name: friend.name,
+              avatar: friend.avatar,
+              status:
+                (presenceStatus ?? friend.status) === "ONLINE"
+                  ? "online"
+                  : "offline",
+              distanceMeters: null,
+              displayDistance:
+                "Distância indisponível",
+            };
+          }
+
+          const distanceMeters =
+            calculateDistance(
+              latitude,
+              longitude,
+              friendLocation.latitude,
+              friendLocation.longitude,
+            );
+
+          return {
+            id: friend.id,
+            name: friend.name,
+            avatar: friend.avatar,
+            status:
+              (presenceStatus ?? friend.status) === "ONLINE"
+                ? "online"
+                : "offline",
             distanceMeters,
-          ),
-      };
-    });
+            displayDistance:
+              formatDistance(
+                distanceMeters,
+              ),
+          };
+        });
 
-    return result
-      .sort((a, b) => {
-        if (
-          a.distanceMeters === null &&
-          b.distanceMeters === null
-        ) {
-          return 0;
-        }
+      /*
+       * Amigos com localização realtime válida
+       * aparecem primeiro.
+       *
+       * Depois ordenamos pela menor distância.
+       */
+      return result
+        .sort((a, b) => {
+          if (
+            a.distanceMeters === null &&
+            b.distanceMeters === null
+          ) {
+            return 0;
+          }
 
-        if (
-          a.distanceMeters === null
-        ) {
-          return 1;
-        }
+          if (
+            a.distanceMeters === null
+          ) {
+            return 1;
+          }
 
-        if (
-          b.distanceMeters === null
-        ) {
-          return -1;
-        }
+          if (
+            b.distanceMeters === null
+          ) {
+            return -1;
+          }
 
-        return (
-          a.distanceMeters -
-          b.distanceMeters
-        );
-      })
-      .slice(0, limit);
-  }, [
-    hasUserLocation,
-    latitude,
-    longitude,
-    limit,
-  ]);
+          return (
+            a.distanceMeters -
+            b.distanceMeters
+          );
+        })
+        .slice(0, limit);
+    },
+    [
+      friendLocations,
+      presenceStatuses,
+      hasUserLocation,
+      latitude,
+      longitude,
+      limit,
+    ],
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyTitle}>Carregando amigos próximos...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyTitle}>Não foi possível carregar</Text>
+        <Text style={styles.emptyText}>{error}</Text>
+        <Pressable onPress={() => { void loadFriends(); }} style={styles.retryButton}>
+          <Text style={styles.seeAllText}>Tentar novamente</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (nearbyFriends.length === 0) {
     return (
@@ -123,8 +218,8 @@ export default function NearbyFriends({
         </Text>
 
         <Text style={styles.emptyText}>
-          Quando seus amigos estiverem disponíveis,
-          eles aparecerão aqui.
+          Quando seus amigos estiverem
+          disponíveis, eles aparecerão aqui.
         </Text>
       </View>
     );
@@ -163,7 +258,7 @@ export default function NearbyFriends({
       <View style={styles.list}>
         {nearbyFriends.map((friend) => {
           const isOnline =
-            friend.status === "online";
+            (presenceStatuses[friend.id] ?? friend.status) === "ONLINE";
 
           return (
             <Pressable
@@ -188,12 +283,15 @@ export default function NearbyFriends({
                   styles.avatarContainer
                 }
               >
-                <Image
-                  source={{
-                    uri: friend.avatar,
-                  }}
-                  style={styles.avatar}
-                />
+                {friend.avatar ? (
+                  <Image source={{ uri: friend.avatar }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                    <Text style={styles.avatarPlaceholderText}>
+                      {friend.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
 
                 <View
                   style={[
@@ -434,6 +532,23 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 19,
     marginTop: 7,
+  },
+
+  avatarPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarPlaceholderText: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  retryButton: {
+    marginTop: 12,
+    backgroundColor: "#FFC400",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
 
   pressed: {

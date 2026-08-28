@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 
 import { FriendsMap } from "@/components/FriendsMap";
+import { BACKEND_URL } from "@/config/backend";
 import NearbyFriends from "@/components/NearbyFriends";
 
 import { CategoryChip } from "@/components/home/CategoryChip";
@@ -26,8 +28,12 @@ import { FeedbackMessage } from "@/components/ui/FeedbackMessage";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
-import { events } from "@/data/events";
-import { venues } from "@/data/venues";
+import {
+  ApiEvent,
+  ApiVenue,
+  getEvents,
+  getVenues,
+} from "@/services/api";
 
 import { useLocationStore } from "@/store/location-store";
 
@@ -44,6 +50,8 @@ const categories = [
   "Gastronomia",
   "Cinema",
   "Comida",
+  "Bar",
+  "Show",
 ];
 
 export default function HomeScreen() {
@@ -56,6 +64,26 @@ export default function HomeScreen() {
     selectedCategory,
     setSelectedCategory,
   ] = useState("Todos");
+
+  const [
+    backendVenues,
+    setBackendVenues,
+  ] = useState<ApiVenue[]>([]);
+
+  const [
+    backendEvents,
+    setBackendEvents,
+  ] = useState<ApiEvent[]>([]);
+
+  const [
+    isLoadingCatalog,
+    setIsLoadingCatalog,
+  ] = useState(true);
+
+  const [
+    catalogError,
+    setCatalogError,
+  ] = useState<string | null>(null);
 
   const latitude =
     useLocationStore(
@@ -76,6 +104,69 @@ export default function HomeScreen() {
     latitude !== null &&
     longitude !== null;
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCatalog = async () => {
+      try {
+        setIsLoadingCatalog(true);
+        setCatalogError(null);
+
+        const [
+          venuesResponse,
+          eventsResponse,
+        ] = await Promise.all([
+          getVenues(),
+          getEvents(),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setBackendVenues(
+          Array.isArray(
+            venuesResponse,
+          )
+            ? venuesResponse
+            : [],
+        );
+
+        setBackendEvents(
+          Array.isArray(
+            eventsResponse,
+          )
+            ? eventsResponse
+            : [],
+        );
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Não foi possível carregar o catálogo.";
+
+        setCatalogError(message);
+
+        setBackendVenues([]);
+        setBackendEvents([]);
+      } finally {
+        if (isMounted) {
+          setIsLoadingCatalog(false);
+        }
+      }
+    };
+
+    loadCatalog();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const normalizedQuery =
     searchQuery
       .trim()
@@ -83,40 +174,60 @@ export default function HomeScreen() {
 
   const venuesWithRealDistance =
     useMemo(() => {
-      return venues.map((venue) => {
-        if (!hasUserLocation) {
+      return backendVenues.map(
+        (venue) => {
+          const venueLatitude =
+            Number(
+              venue.latitude,
+            );
+
+          const venueLongitude =
+            Number(
+              venue.longitude,
+            );
+
+          if (
+            !hasUserLocation ||
+            !Number.isFinite(
+              venueLatitude,
+            ) ||
+            !Number.isFinite(
+              venueLongitude,
+            )
+          ) {
+            return {
+              ...venue,
+              calculatedDistance:
+                null as number | null,
+              displayDistance:
+                venue.distance &&
+                venue.distance.length > 0
+                  ? venue.distance
+                  : "Distância indisponível",
+            };
+          }
+
+          const distance =
+            calculateDistance(
+              latitude,
+              longitude,
+              venueLatitude,
+              venueLongitude,
+            );
+
           return {
             ...venue,
-
             calculatedDistance:
-              null,
-
-            displayDistance:
-              venue.distance,
-          };
-        }
-
-        const distance =
-          calculateDistance(
-            latitude,
-            longitude,
-            venue.latitude,
-            venue.longitude,
-          );
-
-        return {
-          ...venue,
-
-          calculatedDistance:
-            distance,
-
-          displayDistance:
-            formatDistance(
               distance,
-            ),
-        };
-      });
+            displayDistance:
+              formatDistance(
+                distance,
+              ),
+          };
+        },
+      );
     }, [
+      backendVenues,
       hasUserLocation,
       latitude,
       longitude,
@@ -124,26 +235,35 @@ export default function HomeScreen() {
 
   const filteredEvents =
     useMemo(() => {
-      return events.filter(
+      return backendEvents.filter(
         (event) => {
+          const title =
+            event.title
+              .toLowerCase();
+
+          const venueName =
+            (
+              event.venueName ??
+              event.venue?.name ??
+              ""
+            ).toLowerCase();
+
+          const category =
+            event.category
+              .toLowerCase();
+
           const matchesSearch =
             normalizedQuery.length ===
               0 ||
-            event.title
-              .toLowerCase()
-              .includes(
-                normalizedQuery,
-              ) ||
-            event.venueName
-              .toLowerCase()
-              .includes(
-                normalizedQuery,
-              ) ||
-            event.category
-              .toLowerCase()
-              .includes(
-                normalizedQuery,
-              );
+            title.includes(
+              normalizedQuery,
+            ) ||
+            venueName.includes(
+              normalizedQuery,
+            ) ||
+            category.includes(
+              normalizedQuery,
+            );
 
           const matchesCategory =
             selectedCategory ===
@@ -158,6 +278,7 @@ export default function HomeScreen() {
         },
       );
     }, [
+      backendEvents,
       normalizedQuery,
       selectedCategory,
     ]);
@@ -166,19 +287,30 @@ export default function HomeScreen() {
     useMemo(() => {
       return venuesWithRealDistance.filter(
         (venue) => {
+          const name =
+            venue.name
+              .toLowerCase();
+
+          const category =
+            venue.category
+              .toLowerCase();
+
+          const address =
+            venue.address
+              .toLowerCase();
+
           const matchesSearch =
             normalizedQuery.length ===
               0 ||
-            venue.name
-              .toLowerCase()
-              .includes(
-                normalizedQuery,
-              ) ||
-            venue.category
-              .toLowerCase()
-              .includes(
-                normalizedQuery,
-              );
+            name.includes(
+              normalizedQuery,
+            ) ||
+            category.includes(
+              normalizedQuery,
+            ) ||
+            address.includes(
+              normalizedQuery,
+            );
 
           const matchesCategory =
             selectedCategory ===
@@ -212,49 +344,63 @@ export default function HomeScreen() {
       )
       .slice(0, 6);
 
-  const popularVenues = [
-    ...filteredVenues,
-  ]
-    .sort(
-      (a, b) =>
-        b.occupancy -
-        a.occupancy,
-    )
-    .slice(0, 6);
+  const popularVenues =
+    useMemo(() => {
+      return [
+        ...filteredVenues,
+      ]
+        .sort(
+          (a, b) =>
+            b.occupancy -
+            a.occupancy,
+        )
+        .slice(0, 6);
+    }, [
+      filteredVenues,
+    ]);
 
-  const nearbyVenues = [
-    ...filteredVenues,
-  ]
-    .sort((a, b) => {
-      if (
-        a.calculatedDistance ===
-          null &&
-        b.calculatedDistance ===
-          null
-      ) {
-        return 0;
-      }
+  const nearbyVenues =
+    useMemo(() => {
+      return [
+        ...filteredVenues,
+      ]
+        .sort((a, b) => {
+          if (
+            a.calculatedDistance ===
+              null &&
+            b.calculatedDistance ===
+              null
+          ) {
+            return 0;
+          }
 
-      if (
-        a.calculatedDistance ===
-        null
-      ) {
-        return 1;
-      }
+          if (
+            a.calculatedDistance ===
+            null
+          ) {
+            return 1;
+          }
 
-      if (
-        b.calculatedDistance ===
-        null
-      ) {
-        return -1;
-      }
+          if (
+            b.calculatedDistance ===
+            null
+          ) {
+            return -1;
+          }
 
-      return (
-        a.calculatedDistance -
-        b.calculatedDistance
-      );
-    })
-    .slice(0, 6);
+          return (
+            a.calculatedDistance -
+            b.calculatedDistance
+          );
+        })
+        .slice(0, 6);
+    }, [
+      filteredVenues,
+    ]);
+
+  const renderCatalogError =
+    catalogError !== null &&
+    !isLoadingCatalog;
 
   return (
     <View style={styles.page}>
@@ -346,287 +492,322 @@ export default function HomeScreen() {
 
             <LiveMapContainer />
 
-            <Text
-              style={
-                styles.section
-              }
-            >
-              Eventos acontecendo agora
-            </Text>
-
-            {liveEvents.length >
-            0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={
-                  false
-                }
-                contentContainerStyle={
-                  styles.horizontalContent
-                }
-              >
-                {liveEvents.map(
-                  (event) => (
-                    <EventCard
-                      key={
-                        event.id
-                      }
-                      id={
-                        event.id
-                      }
-                      title={
-                        event.title
-                      }
-                      image={
-                        event.image
-                      }
-                      venueName={
-                        event.venueName
-                      }
-                      time={
-                        event.time
-                      }
-                      category={
-                        event.category
-                      }
-                      price={
-                        event.price
-                      }
-                      attendees={
-                        event.attendees
-                      }
-                      isLive={
-                        event.isLive
-                      }
-                    />
-                  ),
-                )}
-              </ScrollView>
-            ) : (
-              <EmptyMessage
-                text="Nenhum evento ao vivo no momento."
-              />
-            )}
-
-            <Text
-              style={
-                styles.section
-              }
-            >
-              Eventos próximos
-            </Text>
-
-            {upcomingEvents.length >
-            0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={
-                  false
-                }
-                contentContainerStyle={
-                  styles.horizontalContent
-                }
-              >
-                {upcomingEvents.map(
-                  (event) => (
-                    <EventCard
-                      key={
-                        event.id
-                      }
-                      id={
-                        event.id
-                      }
-                      title={
-                        event.title
-                      }
-                      image={
-                        event.image
-                      }
-                      venueName={
-                        event.venueName
-                      }
-                      time={
-                        event.time
-                      }
-                      category={
-                        event.category
-                      }
-                      price={
-                        event.price
-                      }
-                      attendees={
-                        event.attendees
-                      }
-                      isLive={
-                        event.isLive
-                      }
-                    />
-                  ),
-                )}
-              </ScrollView>
-            ) : (
-              <EmptyMessage
-                text="Nenhum evento encontrado."
-              />
-            )}
-
-            <Text
-              style={
-                styles.section
-              }
-            >
-              Locais próximos
-            </Text>
-
-            {nearbyVenues.length >
-            0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={
-                  false
-                }
-                contentContainerStyle={
-                  styles.horizontalContent
-                }
-              >
-                {nearbyVenues.map(
-                  (venue) => (
-                    <VenueCard
-                      key={
-                        venue.id
-                      }
-                      id={
-                        venue.id
-                      }
-                      name={
-                        venue.name
-                      }
-                      category={
-                        venue.category
-                      }
-                      distance={
-                        venue.displayDistance
-                      }
-                      occupancy={
-                        venue.occupancy
-                      }
-                      status={
-                        venue.status
-                      }
-                      image={
-                        venue.image
-                      }
-                    />
-                  ),
-                )}
-              </ScrollView>
-            ) : (
-              <EmptyMessage
-                text="Nenhum local encontrado."
-              />
-            )}
-
-            <Text
-              style={
-                styles.section
-              }
-            >
-              Locais populares
-            </Text>
-
-            {popularVenues.length >
-            0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={
-                  false
-                }
-                contentContainerStyle={
-                  styles.horizontalContent
-                }
-              >
-                {popularVenues.map(
-                  (venue) => (
-                    <VenueCard
-                      key={
-                        venue.id
-                      }
-                      id={
-                        venue.id
-                      }
-                      name={
-                        venue.name
-                      }
-                      category={
-                        venue.category
-                      }
-                      distance={
-                        venue.displayDistance
-                      }
-                      occupancy={
-                        venue.occupancy
-                      }
-                      status={
-                        venue.status
-                      }
-                      image={
-                        venue.image
-                      }
-                    />
-                  ),
-                )}
-              </ScrollView>
-            ) : (
-              <EmptyMessage
-                text="Nenhum local popular encontrado."
-              />
-            )}
-
-            <Text
-              style={
-                styles.section
-              }
-            >
-              Amigos próximos
-            </Text>
-
-            <NearbyFriends />
-
-            <Text
-              style={
-                styles.section
-              }
-            >
-              Amigos no mapa
-            </Text>
-
-            {locationStatus ===
-            "requesting" ? (
+            {isLoadingCatalog ? (
               <View
                 style={
-                  styles.stateWrapper
+                  styles.catalogLoading
                 }
               >
                 <LoadingState
-                  message="Obtendo sua localização para carregar o mapa de amigos..."
+                  message="Carregando locais e eventos..."
                 />
               </View>
-            ) : locationStatus ===
-              "denied" ? (
-              <FeedbackMessage
-                type="warning"
-                title="Mapa indisponível"
-                message="O mapa de amigos precisa da sua localização para calcular a proximidade."
-              />
-            ) : locationStatus ===
-              "error" ? (
-              <FeedbackMessage
-                type="error"
-                title="Mapa indisponível"
-                message="Não foi possível obter sua localização para carregar o mapa de amigos."
-              />
+            ) : renderCatalogError ? (
+              <View
+                style={
+                  styles.catalogError
+                }
+              >
+                <FeedbackMessage
+                  type="error"
+                  title="Não foi possível carregar o catálogo"
+                  message={
+                    catalogError ??
+                    `Verifique se o backend está rodando em ${BACKEND_URL}.`
+                  }
+                />
+              </View>
             ) : (
-              <FriendsMap />
+              <>
+                <Text
+                  style={
+                    styles.section
+                  }
+                >
+                  Eventos acontecendo agora
+                </Text>
+
+                {liveEvents.length >
+                0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={
+                      false
+                    }
+                    contentContainerStyle={
+                      styles.horizontalContent
+                    }
+                  >
+                    {liveEvents.map(
+                      (event) => (
+                        <EventCard
+                          key={
+                            event.id
+                          }
+                          id={
+                            event.id
+                          }
+                          title={
+                            event.title
+                          }
+                          image={
+                            event.image
+                          }
+                          venueName={
+                            event.venueName ??
+                            event.venue
+                              ?.name ??
+                            "Local"
+                          }
+                          time={
+                            event.time
+                          }
+                          category={
+                            event.category
+                          }
+                          price={
+                            event.price
+                          }
+                          attendees={
+                            event.attendees
+                          }
+                          isLive={
+                            event.isLive
+                          }
+                        />
+                      ),
+                    )}
+                  </ScrollView>
+                ) : (
+                  <EmptyMessage
+                    text="Nenhum evento ao vivo no momento."
+                  />
+                )}
+
+                <Text
+                  style={
+                    styles.section
+                  }
+                >
+                  Eventos próximos
+                </Text>
+
+                {upcomingEvents.length >
+                0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={
+                      false
+                    }
+                    contentContainerStyle={
+                      styles.horizontalContent
+                    }
+                  >
+                    {upcomingEvents.map(
+                      (event) => (
+                        <EventCard
+                          key={
+                            event.id
+                          }
+                          id={
+                            event.id
+                          }
+                          title={
+                            event.title
+                          }
+                          image={
+                            event.image
+                          }
+                          venueName={
+                            event.venueName ??
+                            event.venue
+                              ?.name ??
+                            "Local"
+                          }
+                          time={
+                            event.time
+                          }
+                          category={
+                            event.category
+                          }
+                          price={
+                            event.price
+                          }
+                          attendees={
+                            event.attendees
+                          }
+                          isLive={
+                            event.isLive
+                          }
+                        />
+                      ),
+                    )}
+                  </ScrollView>
+                ) : (
+                  <EmptyMessage
+                    text="Nenhum evento encontrado."
+                  />
+                )}
+
+                <Text
+                  style={
+                    styles.section
+                  }
+                >
+                  Locais próximos
+                </Text>
+
+                {nearbyVenues.length >
+                0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={
+                      false
+                    }
+                    contentContainerStyle={
+                      styles.horizontalContent
+                    }
+                  >
+                    {nearbyVenues.map(
+                      (venue) => (
+                        <VenueCard
+                          key={
+                            venue.id
+                          }
+                          id={
+                            venue.id
+                          }
+                          name={
+                            venue.name
+                          }
+                          category={
+                            venue.category
+                          }
+                          distance={
+                            venue.displayDistance
+                          }
+                          occupancy={
+                            venue.occupancy
+                          }
+                          status={
+                            venue.status
+                          }
+                          image={
+                            venue.image
+                          }
+                        />
+                      ),
+                    )}
+                  </ScrollView>
+                ) : (
+                  <EmptyMessage
+                    text="Nenhum local encontrado."
+                  />
+                )}
+
+                <Text
+                  style={
+                    styles.section
+                  }
+                >
+                  Locais populares
+                </Text>
+
+                {popularVenues.length >
+                0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={
+                      false
+                    }
+                    contentContainerStyle={
+                      styles.horizontalContent
+                    }
+                  >
+                    {popularVenues.map(
+                      (venue) => (
+                        <VenueCard
+                          key={
+                            venue.id
+                          }
+                          id={
+                            venue.id
+                          }
+                          name={
+                            venue.name
+                          }
+                          category={
+                            venue.category
+                          }
+                          distance={
+                            venue.displayDistance
+                          }
+                          occupancy={
+                            venue.occupancy
+                          }
+                          status={
+                            venue.status
+                          }
+                          image={
+                            venue.image
+                          }
+                        />
+                      ),
+                    )}
+                  </ScrollView>
+                ) : (
+                  <EmptyMessage
+                    text="Nenhum local popular encontrado."
+                  />
+                )}
+
+                <Text
+                  style={
+                    styles.section
+                  }
+                >
+                  Amigos próximos
+                </Text>
+
+                <NearbyFriends />
+
+                <Text
+                  style={
+                    styles.section
+                  }
+                >
+                  Amigos no mapa
+                </Text>
+
+                {locationStatus ===
+                "requesting" ? (
+                  <View
+                    style={
+                      styles.stateWrapper
+                    }
+                  >
+                    <LoadingState
+                      message="Obtendo sua localização para carregar o mapa de amigos..."
+                    />
+                  </View>
+                ) : locationStatus ===
+                  "denied" ? (
+                  <FeedbackMessage
+                    type="warning"
+                    title="Mapa indisponível"
+                    message="O mapa de amigos precisa da sua localização para calcular a proximidade."
+                  />
+                ) : locationStatus ===
+                  "error" ? (
+                  <FeedbackMessage
+                    type="error"
+                    title="Mapa indisponível"
+                    message="Não foi possível obter sua localização para carregar o mapa de amigos."
+                  />
+                ) : (
+                  <FriendsMap />
+                )}
+              </>
             )}
           </View>
         </ScreenContainer>
@@ -694,6 +875,19 @@ const styles = StyleSheet.create({
 
   horizontalContent: {
     paddingRight: 20,
+  },
+
+  catalogLoading: {
+    marginTop: 30,
+    backgroundColor: "#151515",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#292929",
+    padding: 18,
+  },
+
+  catalogError: {
+    marginTop: 30,
   },
 
   emptyContainer: {

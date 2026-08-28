@@ -1,4 +1,9 @@
 import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,7 +13,11 @@ import {
 
 import { router } from "expo-router";
 
-import { venues } from "@/data/venues";
+import {
+  ApiVenue,
+  getVenues,
+} from "@/services/api";
+
 import { useLocationStore } from "@/store/location-store";
 
 export function LiveMap() {
@@ -24,9 +33,52 @@ export function LiveMap() {
     (state) => state.status,
   );
 
+  const [venues, setVenues] = useState<ApiVenue[]>(
+    [],
+  );
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
   const hasLocation =
     latitude !== null &&
     longitude !== null;
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadVenues = async () => {
+      try {
+        const response = await getVenues();
+
+        if (!mounted) {
+          return;
+        }
+
+        setVenues(
+          Array.isArray(response)
+            ? response
+            : [],
+        );
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setVenues([]);
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadVenues();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -64,7 +116,11 @@ export function LiveMap() {
           </View>
         ) : (
           <View style={styles.locationWarning}>
-            <Text style={styles.locationWarningText}>
+            <Text
+              style={
+                styles.locationWarningText
+              }
+            >
               {status === "requesting"
                 ? "Obtendo sua localização..."
                 : status === "denied"
@@ -74,8 +130,9 @@ export function LiveMap() {
           </View>
         )}
 
-        {venues.slice(0, 3).map(
-          (venue, index) => (
+        {venues
+          .slice(0, 3)
+          .map((venue, index) => (
             <Pressable
               key={venue.id}
               onPress={() =>
@@ -89,16 +146,25 @@ export function LiveMap() {
               style={({ pressed }) => [
                 styles.marker,
                 getMarkerPosition(index),
-                pressed && styles.pressed,
+                pressed &&
+                  styles.pressed,
               ]}
             >
-              <View style={styles.markerPin}>
-                <Text style={styles.markerIcon}>
+              <View
+                style={styles.markerPin}
+              >
+                <Text
+                  style={
+                    styles.markerIcon
+                  }
+                >
                   📍
                 </Text>
               </View>
 
-              <View style={styles.markerLabel}>
+              <View
+                style={styles.markerLabel}
+              >
                 <Text
                   style={styles.markerName}
                   numberOfLines={1}
@@ -106,27 +172,37 @@ export function LiveMap() {
                   {venue.name}
                 </Text>
 
-                <Text style={styles.markerInfo}>
-                  {venue.distance}
+                <Text
+                  style={styles.markerInfo}
+                >
+                  {venue.distance ||
+                    "Distância indisponível"}
                 </Text>
               </View>
             </Pressable>
-          ),
-        )}
+          ))}
       </View>
 
       <View style={styles.locationCard}>
-        <Text style={styles.locationTitle}>
+        <Text
+          style={styles.locationTitle}
+        >
           Sua localização
         </Text>
 
         {hasLocation ? (
-          <Text style={styles.coordinates}>
+          <Text
+            style={styles.coordinates}
+          >
             {latitude.toFixed(5)},{" "}
             {longitude.toFixed(5)}
           </Text>
         ) : (
-          <Text style={styles.coordinatesUnavailable}>
+          <Text
+            style={
+              styles.coordinatesUnavailable
+            }
+          >
             Localização não disponível
           </Text>
         )}
@@ -138,80 +214,126 @@ export function LiveMap() {
         </Text>
 
         <Text style={styles.venuesCount}>
-          {venues.length}
+          {isLoading
+            ? "..."
+            : venues.length}
         </Text>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={
-          styles.venuesContent
-        }
-      >
-        {venues.map((venue) => (
-          <Pressable
-            key={venue.id}
-            onPress={() =>
-              router.push({
-                pathname: "/venue/[id]",
-                params: {
-                  id: venue.id,
-                },
-              })
-            }
-            style={({ pressed }) => [
-              styles.venueCard,
-              pressed && styles.pressed,
-            ]}
+      {isLoading ? (
+        <View
+          style={styles.loadingCard}
+        >
+          <Text
+            style={styles.loadingText}
           >
-            <View style={styles.venueTopRow}>
-              <View style={styles.venueIcon}>
-                <Text style={styles.venueIconText}>
-                  📍
-                </Text>
+            Carregando locais...
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={
+            false
+          }
+          contentContainerStyle={
+            styles.venuesContent
+          }
+        >
+          {venues.map((venue) => (
+            <Pressable
+              key={venue.id}
+              onPress={() =>
+                router.push({
+                  pathname: "/venue/[id]",
+                  params: {
+                    id: venue.id,
+                  },
+                })
+              }
+              style={({ pressed }) => [
+                styles.venueCard,
+                pressed &&
+                  styles.pressed,
+              ]}
+            >
+              <View
+                style={
+                  styles.venueTopRow
+                }
+              >
+                <View
+                  style={
+                    styles.venueIcon
+                  }
+                >
+                  <Text
+                    style={
+                      styles.venueIconText
+                    }
+                  >
+                    📍
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.statusDot,
+                    venue.status ===
+                      "open"
+                      ? styles.statusOpen
+                      : styles.statusClosed,
+                  ]}
+                />
               </View>
 
+              <Text
+                style={styles.venueName}
+                numberOfLines={1}
+              >
+                {venue.name}
+              </Text>
+
+              <Text
+                style={
+                  styles.venueCategory
+                }
+                numberOfLines={1}
+              >
+                {venue.category}
+              </Text>
+
               <View
-                style={[
-                  styles.statusDot,
-                  venue.status === "open"
-                    ? styles.statusOpen
-                    : styles.statusClosed,
-                ]}
-              />
-            </View>
+                style={
+                  styles.venueBottomRow
+                }
+              >
+                <Text
+                  style={
+                    styles.venueDistance
+                  }
+                >
+                  {venue.distance ||
+                    "—"}
+                </Text>
 
-            <Text
-              style={styles.venueName}
-              numberOfLines={1}
-            >
-              {venue.name}
-            </Text>
-
-            <Text
-              style={styles.venueCategory}
-              numberOfLines={1}
-            >
-              {venue.category}
-            </Text>
-
-            <View style={styles.venueBottomRow}>
-              <Text style={styles.venueDistance}>
-                {venue.distance}
-              </Text>
-
-              <Text style={styles.venueOccupancy}>
-                {venue.occupancy}% ocupação
-              </Text>
-            </View>
-          </Pressable>
-        ))}
-      </ScrollView>
+                <Text
+                  style={
+                    styles.venueOccupancy
+                  }
+                >
+                  {venue.occupancy}%
+                  {" "}ocupação
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
 
       <Text style={styles.webNotice}>
-        No aplicativo Android/iOS, esta área usa o
-        mapa nativo interativo.
+        No aplicativo Android/iOS, esta área
+        usa o mapa nativo interativo.
       </Text>
     </View>
   );
@@ -544,6 +666,20 @@ const styles = StyleSheet.create({
     color: "#777777",
     fontSize: 10,
     marginTop: 3,
+  },
+
+  loadingCard: {
+    backgroundColor: "#1B1B1B",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#292929",
+  },
+
+  loadingText: {
+    color: "#888888",
+    fontSize: 12,
+    textAlign: "center",
   },
 
   webNotice: {

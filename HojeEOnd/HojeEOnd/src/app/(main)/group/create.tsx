@@ -1,9 +1,7 @@
-import {
-  useMemo,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
 
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,14 +10,12 @@ import {
   View,
 } from "react-native";
 
-import {
-  router,
-} from "expo-router";
+import { router } from "expo-router";
 
 import { FeedbackMessage } from "@/components/ui/FeedbackMessage";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
-import { venues } from "@/data/venues";
+import { getVenues, type ApiVenue } from "@/services/api";
 
 import { useGroupStore } from "@/store/group-store";
 import { useUserStore } from "@/store/user-store";
@@ -59,74 +55,92 @@ export default function CreateGroupScreen() {
     setError,
   ] = useState("");
 
-  const availableVenues =
-    useMemo(
-      () => venues,
-      [],
-    );
+  const [availableVenues, setAvailableVenues] = useState<ApiVenue[]>([]);
+  const [loadingVenues, setLoadingVenues] = useState(true);
+  const [venuesError, setVenuesError] = useState<string | null>(null);
 
-  const handleBackToGroups = () => {
-    router.replace(
-      "/(main)/groups",
-    );
+  const loadVenues = async () => {
+    setLoadingVenues(true);
+    setVenuesError(null);
+    try {
+      setAvailableVenues(await getVenues());
+    } catch (requestError) {
+      setVenuesError(requestError instanceof Error ? requestError.message : "Não foi possível carregar os locais.");
+    } finally {
+      setLoadingVenues(false);
+    }
   };
 
-  const handleCreate = () => {
-    const trimmedName =
-      name.trim();
+  useEffect(() => {
+    void loadVenues();
+  }, []);
+  const handleBackToGroups =
+    () => {
+      if (saving) {
+        return;
+      }
 
-    if (!trimmedName) {
-      setError(
-        "Digite um nome para o grupo.",
+      router.replace(
+        "/(main)/groups",
       );
-
-      return;
-    }
-
-    if (!selectedVenueId) {
-      setError(
-        "Escolha um local para o grupo.",
-      );
-
-      return;
-    }
-
-    if (!user) {
-      setError(
-        "Usuário não encontrado.",
-      );
-
-      return;
-    }
-
-    setError("");
-    setSaving(true);
-
-    const newGroup = {
-      id:
-        `group-${Date.now()}`,
-
-      name:
-        trimmedName,
-
-      venueId:
-        selectedVenueId,
-
-      members: [
-        user.id,
-      ],
     };
 
-    createGroup(
-      newGroup,
-    );
+  const handleCreate =
+    async () => {
+      const trimmedName =
+        name.trim();
 
-    setSaving(false);
+      if (!trimmedName) {
+        setError(
+          "Digite um nome para o grupo.",
+        );
 
-    router.replace(
-      "/(main)/groups",
-    );
-  };
+        return;
+      }
+
+      if (!selectedVenueId) {
+        setError(
+          "Escolha um local para o grupo.",
+        );
+
+        return;
+      }
+
+      if (!user) {
+        setError(
+          "Usuário não encontrado.",
+        );
+
+        return;
+      }
+
+      setError("");
+      setSaving(true);
+
+      try {
+        await createGroup(
+          trimmedName,
+          selectedVenueId,
+        );
+
+        router.replace(
+          "/(main)/groups",
+        );
+      } catch (error) {
+        console.error(
+          "[CreateGroup] Erro ao criar grupo:",
+          error,
+        );
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível criar o grupo.",
+        );
+      } finally {
+        setSaving(false);
+      }
+    };
 
   return (
     <ScrollView
@@ -193,8 +207,9 @@ export default function CreateGroupScreen() {
                 styles.subtitle
               }
             >
-              Escolha um nome e um local para
-              organizar sua próxima saída.
+              Escolha um nome e um
+              local para organizar sua
+              próxima saída.
             </Text>
           </View>
 
@@ -232,6 +247,7 @@ export default function CreateGroupScreen() {
               maxLength={50}
               autoCapitalize="sentences"
               returnKeyType="done"
+              editable={!saving}
             />
 
             <Text
@@ -250,11 +266,24 @@ export default function CreateGroupScreen() {
               Local
             </Text>
 
-            <View
-              style={
-                styles.venuesList
-              }
-            >
+            {loadingVenues ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color="#FFC400" />
+                <Text style={styles.loadingText}>Carregando locais...</Text>
+              </View>
+            ) : venuesError ? (
+              <View>
+                <FeedbackMessage type="error" title="Não foi possível carregar" message={venuesError} />
+                <Pressable onPress={() => { void loadVenues(); }}>
+                  <Text style={styles.retryText}>Tentar novamente</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View
+                style={
+                  styles.venuesList
+                }
+              >
               {availableVenues.map(
                 (venue) => {
                   const selected =
@@ -265,6 +294,9 @@ export default function CreateGroupScreen() {
                     <Pressable
                       key={
                         venue.id
+                      }
+                      disabled={
+                        saving
                       }
                       onPress={() => {
                         setSelectedVenueId(
@@ -337,6 +369,7 @@ export default function CreateGroupScreen() {
                 },
               )}
             </View>
+            )}
           </View>
 
           {error ? (
@@ -421,12 +454,14 @@ const styles =
   StyleSheet.create({
     container: {
       flex: 1,
+
       backgroundColor:
         "#090909",
     },
 
     scrollContent: {
       paddingTop: 20,
+
       paddingBottom: 50,
     },
 
@@ -439,7 +474,9 @@ const styles =
         "flex-start",
 
       paddingVertical: 8,
+
       paddingHorizontal: 4,
+
       marginBottom: 14,
     },
 
@@ -448,6 +485,7 @@ const styles =
         "#FFFFFF",
 
       fontSize: 15,
+
       fontWeight: "700",
     },
 
@@ -460,6 +498,7 @@ const styles =
         "#FFC400",
 
       fontSize: 30,
+
       fontWeight: "800",
     },
 
@@ -468,7 +507,9 @@ const styles =
         "#888888",
 
       fontSize: 14,
+
       lineHeight: 20,
+
       marginTop: 6,
     },
 
@@ -477,9 +518,11 @@ const styles =
         "#1B1B1B",
 
       borderRadius: 20,
+
       padding: 18,
 
       borderWidth: 1,
+
       borderColor:
         "#292929",
     },
@@ -489,9 +532,11 @@ const styles =
         "#FFFFFF",
 
       fontSize: 15,
+
       fontWeight: "800",
 
       marginBottom: 8,
+
       marginTop: 8,
     },
 
@@ -504,6 +549,7 @@ const styles =
       borderRadius: 14,
 
       borderWidth: 1,
+
       borderColor:
         "#333333",
 
@@ -520,9 +566,17 @@ const styles =
         "#666666",
 
       fontSize: 11,
+
       textAlign: "right",
+
       marginTop: 5,
     },
+
+    loadingContainer: { alignItems: "center", paddingVertical: 24, gap: 10 },
+
+    loadingText: { color: "#AAAAAA", fontSize: 14 },
+
+    retryText: { color: "#FFC400", fontSize: 14, fontWeight: "700", textAlign: "center", marginTop: 12 },
 
     venuesList: {
       marginTop: 4,
@@ -544,10 +598,12 @@ const styles =
       borderRadius: 16,
 
       borderWidth: 1,
+
       borderColor:
         "#2C2C2C",
 
       padding: 14,
+
       marginBottom: 10,
     },
 
@@ -561,7 +617,9 @@ const styles =
 
     venueInfo: {
       flex: 1,
+
       minWidth: 0,
+
       paddingRight: 12,
     },
 
@@ -570,6 +628,7 @@ const styles =
         "#FFFFFF",
 
       fontSize: 16,
+
       fontWeight: "800",
     },
 
@@ -578,16 +637,19 @@ const styles =
         "#888888",
 
       fontSize: 12,
+
       marginTop: 4,
     },
 
     radio: {
       width: 22,
+
       height: 22,
 
       borderRadius: 11,
 
       borderWidth: 2,
+
       borderColor:
         "#666666",
 
@@ -605,6 +667,7 @@ const styles =
 
     radioInner: {
       width: 10,
+
       height: 10,
 
       borderRadius: 5,
@@ -636,6 +699,7 @@ const styles =
         "#000000",
 
       fontSize: 15,
+
       fontWeight: "800",
     },
 
@@ -646,6 +710,7 @@ const styles =
       borderRadius: 14,
 
       borderWidth: 1,
+
       borderColor:
         "#333333",
 
@@ -662,6 +727,7 @@ const styles =
         "#FFFFFF",
 
       fontSize: 15,
+
       fontWeight: "700",
     },
 

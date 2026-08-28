@@ -1,132 +1,142 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
 import { create } from "zustand";
 
 import {
-  createJSONStorage,
-  persist,
-} from "zustand/middleware";
+  addFavorite as addFavoriteRequest,
+  getFavorites,
+  removeFavorite as removeFavoriteRequest,
+  type ApiFavorite,
+  type ApiVenue,
+} from "@/services/api";
 
 interface FavoriteStore {
   favorites: string[];
-
-  addFavorite: (
-    venueId: string,
-  ) => void;
-
-  removeFavorite: (
-    venueId: string,
-  ) => void;
-
-  toggleFavorite: (
-    venueId: string,
-  ) => void;
-
-  isFavorite: (
-    venueId: string,
-  ) => boolean;
-
+  favoriteIds: string[];
+  favoriteVenues: ApiVenue[];
+  loading: boolean;
+  error: string | null;
+  processingVenueIds: Record<string, boolean>;
+  loadFavorites: () => Promise<void>;
+  addFavorite: (venueId: string) => Promise<void>;
+  removeFavorite: (venueId: string) => Promise<void>;
+  toggleFavorite: (venueId: string) => Promise<void>;
+  isFavorite: (venueId: string) => boolean;
+  isProcessing: (venueId: string) => boolean;
   clearFavorites: () => void;
+  clearError: () => void;
 }
 
-export const useFavoriteStore =
-  create<FavoriteStore>()(
-    persist(
-      (set, get) => ({
-        favorites: [],
+function applyFavorites(
+  items: ApiFavorite[],
+): Pick<FavoriteStore, "favorites" | "favoriteIds" | "favoriteVenues"> {
+  const ids = items.map((item) => item.venueId);
+  return {
+    favorites: ids,
+    favoriteIds: ids,
+    favoriteVenues: items.map((item) => item.venue),
+  };
+}
 
-        addFavorite: (
-          venueId,
-        ) => {
-          set((state) => {
-            if (
-              state.favorites.includes(
-                venueId,
-              )
-            ) {
-              return state;
-            }
+export const useFavoriteStore = create<FavoriteStore>()((set, get) => ({
+  favorites: [],
+  favoriteIds: [],
+  favoriteVenues: [],
+  loading: false,
+  error: null,
+  processingVenueIds: {},
 
-            return {
-              favorites: [
-                ...state.favorites,
-                venueId,
-              ],
-            };
-          });
-        },
+  loadFavorites: async () => {
+    set({ loading: true, error: null });
+    try {
+      const items = await getFavorites();
+      set({ ...applyFavorites(items), loading: false, error: null });
+    } catch (error) {
+      set({
+        loading: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível carregar seus favoritos.",
+      });
+    }
+  },
 
-        removeFavorite: (
-          venueId,
-        ) => {
-          set((state) => ({
-            favorites:
-              state.favorites.filter(
-                (id) =>
-                  id !== venueId,
-              ),
-          }));
-        },
+  addFavorite: async (venueId) => {
+    if (!venueId || get().processingVenueIds[venueId]) return;
+    set((state) => ({
+      error: null,
+      processingVenueIds: { ...state.processingVenueIds, [venueId]: true },
+    }));
+    try {
+      const item = await addFavoriteRequest(venueId);
+      set((state) => {
+        const ids = state.favorites.includes(item.venueId)
+          ? state.favorites
+          : [...state.favorites, item.venueId];
+        const venues = state.favoriteVenues.some((venue) => venue.id === item.venueId)
+          ? state.favoriteVenues
+          : [...state.favoriteVenues, item.venue];
+        return {
+          favorites: ids,
+          favoriteIds: ids,
+          favoriteVenues: venues,
+          error: null,
+          processingVenueIds: { ...state.processingVenueIds, [venueId]: false },
+        };
+      });
+    } catch (error) {
+      set((state) => ({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível adicionar o favorito.",
+        processingVenueIds: { ...state.processingVenueIds, [venueId]: false },
+      }));
+      throw error;
+    }
+  },
 
-        toggleFavorite: (
-          venueId,
-        ) => {
-          set((state) => {
-            const alreadyFavorite =
-              state.favorites.includes(
-                venueId,
-              );
+  removeFavorite: async (venueId) => {
+    if (!venueId || get().processingVenueIds[venueId]) return;
+    set((state) => ({
+      error: null,
+      processingVenueIds: { ...state.processingVenueIds, [venueId]: true },
+    }));
+    try {
+      await removeFavoriteRequest(venueId);
+      set((state) => {
+        const ids = state.favorites.filter((id) => id !== venueId);
+        return {
+          favorites: ids,
+          favoriteIds: ids,
+          favoriteVenues: state.favoriteVenues.filter((venue) => venue.id !== venueId),
+          error: null,
+          processingVenueIds: { ...state.processingVenueIds, [venueId]: false },
+        };
+      });
+    } catch (error) {
+      set((state) => ({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível remover o favorito.",
+        processingVenueIds: { ...state.processingVenueIds, [venueId]: false },
+      }));
+      throw error;
+    }
+  },
 
-            if (alreadyFavorite) {
-              return {
-                favorites:
-                  state.favorites.filter(
-                    (id) =>
-                      id !==
-                      venueId,
-                  ),
-              };
-            }
+  toggleFavorite: async (venueId) => {
+    if (get().favorites.includes(venueId)) {
+      await get().removeFavorite(venueId);
+    } else {
+      await get().addFavorite(venueId);
+    }
+  },
 
-            return {
-              favorites: [
-                ...state.favorites,
-                venueId,
-              ],
-            };
-          });
-        },
+  isFavorite: (venueId) => get().favorites.includes(venueId),
+  isProcessing: (venueId) => Boolean(get().processingVenueIds[venueId]),
 
-        isFavorite: (
-          venueId,
-        ) =>
-          get().favorites.includes(
-            venueId,
-          ),
-
-        clearFavorites: () => {
-          set({
-            favorites: [],
-          });
-        },
-      }),
-
-      {
-        name:
-          "hojeond-favorites",
-
-        storage:
-          createJSONStorage(
-            () =>
-              AsyncStorage,
-          ),
-
-        partialize: (
-          state,
-        ) => ({
-          favorites:
-            state.favorites,
-        }),
-      },
-    ),
-  );
+  clearFavorites: () =>
+    set({ favorites: [], favoriteIds: [], favoriteVenues: [], error: null }),
+  clearError: () => set({ error: null }),
+}));

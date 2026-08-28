@@ -1,33 +1,55 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
 import { create } from "zustand";
-
 import {
   createJSONStorage,
   persist,
 } from "zustand/middleware";
 
-import type { User } from "@/data/users";
+export type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string | null;
+  bio: string | null;
+  status: "ONLINE" | "OFFLINE";
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 interface UserStore {
-  user: User;
+  user: AuthUser | null;
+  accessToken: string | null;
+  hasHydrated: boolean;
+
+  setAuth: (
+    user: AuthUser,
+    accessToken: string,
+  ) => void;
+
+  setUser: (
+    user: AuthUser,
+  ) => void;
+
+  clearAuth: () => void;
+
+  logout: () => void;
+
+  setHasHydrated: (hasHydrated: boolean) => void;
 
   updateName: (
     name: string,
   ) => void;
 
   updateAvatar: (
-    avatar: string,
+    avatar: string | null,
   ) => void;
 
   updateStatus: (
-    status:
-      | "online"
-      | "offline",
+    status: "ONLINE" | "OFFLINE",
   ) => void;
 
   updateBio: (
-    bio: string,
+    bio: string | null,
   ) => void;
 }
 
@@ -35,66 +57,94 @@ export const useUserStore =
   create<UserStore>()(
     persist(
       (set) => ({
-        user: {
-          id: "1",
+        user: null,
 
-          name:
-            "Caio",
+        accessToken: null,
 
-          avatar:
-            "https://i.pravatar.cc/150?img=12",
+        hasHydrated: false,
 
-          status:
-            "online",
+        setAuth: (
+          user,
+          accessToken,
+        ) =>
+          set({
+            user,
+            accessToken,
+          }),
 
-          bio:
-            "Procurando rolê hoje 🎧",
-        },
+        setUser: (
+          user,
+        ) =>
+          set({
+            user,
+          }),
+
+        clearAuth: () =>
+          set({
+            user: null,
+            accessToken: null,
+          }),
+
+        logout: () =>
+          set({
+            user: null,
+            accessToken: null,
+          }),
+
+        setHasHydrated: (hasHydrated) =>
+          set({ hasHydrated }),
 
         updateName: (
           name,
         ) =>
           set((state) => ({
-            user: {
-              ...state.user,
-              name,
-            },
+            user: state.user
+              ? {
+                  ...state.user,
+                  name,
+                }
+              : null,
           })),
 
         updateAvatar: (
           avatar,
         ) =>
           set((state) => ({
-            user: {
-              ...state.user,
-              avatar,
-            },
+            user: state.user
+              ? {
+                  ...state.user,
+                  avatar,
+                }
+              : null,
           })),
 
         updateStatus: (
           status,
         ) =>
           set((state) => ({
-            user: {
-              ...state.user,
-              status,
-            },
+            user: state.user
+              ? {
+                  ...state.user,
+                  status,
+                }
+              : null,
           })),
 
         updateBio: (
           bio,
         ) =>
           set((state) => ({
-            user: {
-              ...state.user,
-              bio,
-            },
+            user: state.user
+              ? {
+                  ...state.user,
+                  bio,
+                }
+              : null,
           })),
       }),
 
       {
-        name:
-          "hojeond-user",
+        name: "hojeond-user",
 
         storage:
           createJSONStorage(
@@ -102,12 +152,18 @@ export const useUserStore =
               AsyncStorage,
           ),
 
-        partialize: (
-          state,
-        ) => ({
-          user:
-            state.user,
-        }),
+        onRehydrateStorage: () => (state) => {
+          state?.setHasHydrated(true);
+        },
+
+        partialize:
+          (state) => ({
+            user:
+              state.user,
+
+            accessToken:
+              state.accessToken,
+          }),
       },
     ),
   );

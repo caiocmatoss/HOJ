@@ -1,114 +1,109 @@
-import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
 
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-export default function HomeScreen() {
+import { router } from "expo-router";
 
-  const router = useRouter();
+import { useUserStore } from "@/store/user-store";
 
-  return (
+export default function IndexScreen() {
+  const [checkingSession, setCheckingSession] =
+    useState(true);
 
-    <View style={styles.container}>
-
-      <Text style={styles.logo}>
-        HOJ OND
-      </Text>
-
-
-      <Text style={styles.subtitle}>
-        Descubra a melhor noite da sua cidade
-      </Text>
-
-
-      <Pressable
-  style={styles.button}
-  onPress={() => {
-  router.replace("/(auth)/login");
-}}
->
-  <Text style={styles.buttonText}>
-    Entrar
-  </Text>
-</Pressable>
-
-      <Pressable
-        style={styles.buttonOutline}
-        onPress={() => router.replace("/(auth)/register")}
-      >
-
-        <Text style={styles.buttonOutlineText}>
-          Criar Conta
-        </Text>
-
-      </Pressable>
-
-
-    </View>
-
+  const accessToken = useUserStore(
+    (state) => state.accessToken,
   );
 
+  useEffect(() => {
+    let mounted = true;
+
+    if (accessToken) {
+      router.replace("/(main)/home");
+    } else {
+      router.replace("/(auth)/login");
+    }
+
+    if (mounted) {
+      setCheckingSession(false);
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, [accessToken]);
+
+  if (checkingSession) {
+    return (
+      <View style={styles.page}>
+        <View style={styles.content}>
+          <Text style={styles.logo}>
+          HOJÉ OND</Text>
+
+          <ActivityIndicator
+            size="large"
+            color="#FFD54F"
+            style={styles.loader}
+          />
+
+          <Text style={styles.subtitle}>
+            Verificando sua sessão...
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.page}>
+      <View style={styles.content}>
+        <Text style={styles.logo}>
+        HOJÉ OND</Text>
+
+        <Text style={styles.subtitle}>
+          Redirecionando...
+        </Text>
+      </View>
+    </View>
+  );
 }
 
-
 const styles = StyleSheet.create({
-
-  container:{
-    flex:1,
-    backgroundColor:"#0F0F0F",
-    justifyContent:"center",
-    alignItems:"center",
-    padding:24,
+  page: {
+    flex: 1,
+    backgroundColor: "#0F0F0F",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
-
-  logo:{
-    fontSize:42,
-    fontWeight:"bold",
-    color:"#FFD54F",
-    marginBottom:20,
+  content: {
+    width: "100%",
+    maxWidth: 520,
+    paddingHorizontal: 24,
+    alignItems: "center",
   },
 
-
-  subtitle:{
-    color:"#FFFFFF",
-    fontSize:18,
-    textAlign:"center",
-    marginBottom:60,
-    maxWidth:300,
+  logo: {
+    color: "#FFD54F",
+    fontSize: 42,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 20,
   },
 
-
-  button:{
-    width:"100%",
-    backgroundColor:"#FFD54F",
-    padding:18,
-    borderRadius:14,
-    marginBottom:16,
+  loader: {
+    marginBottom: 20,
   },
 
-
-  buttonText:{
-    textAlign:"center",
-    fontWeight:"700",
-    fontSize:18,
-    color:"#000",
+  subtitle: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    lineHeight: 24,
+    textAlign: "center",
+    maxWidth: 380,
   },
-
-
-  buttonOutline:{
-    width:"100%",
-    borderWidth:2,
-    borderColor:"#FFD54F",
-    padding:18,
-    borderRadius:14,
-  },
-
-
-  buttonOutlineText:{
-    textAlign:"center",
-    fontWeight:"700",
-    fontSize:18,
-    color:"#FFD54F",
-  },
-
 });

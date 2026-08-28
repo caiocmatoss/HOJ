@@ -1,9 +1,11 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
 
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -20,12 +22,64 @@ import {
   useLocalSearchParams,
 } from "expo-router";
 
+import {
+  useChatStore,
+  type DirectChatMessage,
+} from "@/store/chat-store";
+
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
-import { friends } from "@/data/friends";
+import {
+  getDirectMessages,
+  getFriends,
+  type ApiFriend,
+} from "@/services/api";
 
-import { useChatStore } from "@/store/chat-store";
 import { useUserStore } from "@/store/user-store";
+
+import { usePresenceStore } from "@/store/presence-store";
+
+import {
+  joinDirectConversation,
+  leaveDirectConversation,
+  onNewDirectMessage,
+  sendDirectSocketMessage,
+} from "@/services/socket";
+
+function createDirectConversationId(
+  userId: string,
+  friendId: string,
+): string {
+  const ids = [
+    userId,
+    friendId,
+  ].sort();
+
+  return `direct-${ids[0]}-${ids[1]}`;
+}
+
+function formatMessageTime(
+  value: string,
+): string {
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return "";
+  }
+
+  return date.toLocaleTimeString(
+    "pt-BR",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  );
+}
 
 export default function DirectChatScreen() {
   const { id } =
@@ -38,33 +92,66 @@ export default function DirectChatScreen() {
       ? id[0]
       : id;
 
-  const user = useUserStore(
-    (state) => state.user,
-  );
+  const user =
+    useUserStore(
+      (state) =>
+        state.user,
+    );
 
-  const messages = useChatStore(
-    (state) => state.messages,
-  );
+  const accessToken =
+    useUserStore(
+      (state) =>
+        state.accessToken,
+    );
 
-  const sendMessage = useChatStore(
-    (state) => state.sendMessage,
-  );
+  const directMessages =
+    useChatStore(
+      (state) =>
+        state.directMessages,
+    );
+
+  const setDirectMessages =
+    useChatStore(
+      (state) =>
+        state.setDirectMessages,
+    );
+
+  const addDirectMessage =
+    useChatStore(
+      (state) =>
+        state.addDirectMessage,
+    );
 
   const [
     text,
     setText,
   ] = useState("");
 
-  const friend = useMemo(() => {
-    if (!friendId) {
-      return undefined;
-    }
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-    return friends.find(
-      (item) =>
-        item.id === friendId,
-    );
-  }, [friendId]);
+  const [
+    connecting,
+    setConnecting,
+  ] = useState(false);
+
+  const [
+    sending,
+    setSending,
+  ] = useState(false);
+
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(
+    null,
+  );
+
+  const [friend, setFriend] = useState<ApiFriend | null>(null);
+
+  const presenceStatuses = usePresenceStore((state) => state.statuses);
 
   const conversationId =
     useMemo(() => {
@@ -84,31 +171,243 @@ export default function DirectChatScreen() {
       user,
     ]);
 
-  const directMessages =
-    useMemo(() => {
-      if (!conversationId) {
-        return [];
+  const messages =
+    conversationId
+      ? directMessages[
+          conversationId
+        ] ?? []
+      : [];
+
+  /*
+   * =========================================================
+   * HISTÓRICO DA CONVERSA PRIVADA
+   * =========================================================
+   *
+   * Backend:
+   *
+   * GET /direct-messages/:userId
+   *
+   * O frontend anteriormente estava usando:
+   *
+   * GET /users/:userId/messages
+   *
+   * que não corresponde ao DirectMessagesController.
+   */
+
+  useEffect(() => {
+    if (!user || !friendId || !conversationId || !accessToken) {
+      setFriend(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadConversation = async () => {
+      setLoading(true);
+      setError(null);
+      setFriend(null);
+
+      try {
+        const realFriends = await getFriends();
+        const realFriend = realFriends.find((item) => item.id === friendId);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!realFriend) {
+          setFriend(null);
+          return;
+        }
+
+        setFriend(realFriend);
+        const response = await getDirectMessages(friendId);
+
+        if (cancelled) {
+          return;
+        }
+
+        setDirectMessages(conversationId, response);
+      } catch (requestError) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("[Chat] erro ao carregar conversa privada:", requestError);
+        setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar a conversa.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadConversation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accessToken,
+    conversationId,
+    friendId,
+    setDirectMessages,
+    user,
+  ]);
+
+  /*
+   * =========================================================
+   * SOCKET.IO — CONVERSA PRIVADA
+   * =========================================================
+   *
+   * IMPORTANTE:
+   *
+   * O listener é registrado antes de entrar no room.
+   *
+   * Isso evita a possibilidade de uma mensagem chegar
+   * entre o join e o registro do listener.
+   */
+
+  useEffect(() => {
+    if (
+      !user ||
+      !friendId ||
+      !conversationId ||
+      !accessToken ||
+      loading
+    ) {
+      return;
+    }
+
+    let active = true;
+
+    let unsubscribe:
+      | (() => void)
+      | null = null;
+
+    const handleNewMessage =
+      (
+        message: DirectChatMessage,
+      ) => {
+        if (!active) {
+          return;
+        }
+
+        const belongsToConversation =
+          (
+            message.senderId ===
+              user.id &&
+            message.receiverId ===
+              friendId
+          ) ||
+          (
+            message.senderId ===
+              friendId &&
+            message.receiverId ===
+              user.id
+          );
+
+        if (
+          !belongsToConversation
+        ) {
+          return;
+        }
+
+        console.log(
+          "[Chat] direct:message:new:",
+          message,
+        );
+
+        addDirectMessage(
+          conversationId,
+          message,
+        );
+      };
+
+    const connect =
+      async () => {
+        setConnecting(true);
+
+        try {
+          /*
+           * Primeiro registra o listener.
+           */
+          unsubscribe =
+            onNewDirectMessage(
+              handleNewMessage,
+            );
+
+          if (!active) {
+            return;
+          }
+
+          /*
+           * Depois entra no room privado.
+           */
+          await joinDirectConversation(
+            friendId,
+          );
+
+          if (!active) {
+            return;
+          }
+
+          console.log(
+            "[Chat] conversa privada conectada:",
+            friendId,
+          );
+        } catch (
+          socketError
+        ) {
+          if (!active) {
+            return;
+          }
+
+          console.error(
+            "[Chat] erro ao conectar conversa privada:",
+            socketError,
+          );
+
+          setError(
+            socketError instanceof Error
+              ? socketError.message
+              : "Não foi possível conectar ao chat.",
+          );
+        } finally {
+          if (active) {
+            setConnecting(false);
+          }
+        }
+      };
+
+    void connect();
+
+    return () => {
+      active = false;
+
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
       }
 
-      return messages
-        .filter(
-          (message) =>
-            message.groupId ===
-            conversationId,
-        )
-        .sort(
-          (a, b) =>
-            getTimestamp(
-              a.createdAt,
-            ) -
-            getTimestamp(
-              b.createdAt,
-            ),
-        );
-    }, [
-      conversationId,
-      messages,
-    ]);
+      leaveDirectConversation(
+        friendId,
+      );
+    };
+  }, [
+    accessToken,
+    conversationId,
+    friendId,
+    user,
+    addDirectMessage,
+  ]);
+
+  /*
+   * =========================================================
+   * VOLTAR
+   * =========================================================
+   */
 
   const handleBack = () => {
     router.replace(
@@ -116,7 +415,13 @@ export default function DirectChatScreen() {
     );
   };
 
-  const handleSend = () => {
+  /*
+   * =========================================================
+   * ENVIAR MENSAGEM
+   * =========================================================
+   */
+
+  const handleSend = async () => {
     const trimmedText =
       text.trim();
 
@@ -124,24 +429,65 @@ export default function DirectChatScreen() {
       !trimmedText ||
       !user ||
       !friend ||
-      !conversationId
+      !friendId ||
+      !conversationId ||
+      sending
     ) {
       return;
     }
 
-    sendMessage({
-      id: `direct-message-${Date.now()}`,
-      groupId:
-        conversationId,
-      userId: user.id,
-      userName: user.name,
-      text: trimmedText,
-      createdAt:
-        new Date().toISOString(),
-    });
+    setSending(true);
+    setError(null);
 
-    setText("");
+    try {
+      const message =
+        await sendDirectSocketMessage(
+          friendId,
+          trimmedText,
+        );
+
+      /*
+       * A mensagem enviada pelo servidor
+       * é adicionada imediatamente.
+       *
+       * Caso direct:message:new também
+       * seja recebido, o Zustand usa o ID
+       * da mensagem para impedir duplicação.
+       */
+      addDirectMessage(
+        conversationId,
+        message,
+      );
+
+      setText("");
+
+      console.log(
+        "[Chat] mensagem privada enviada:",
+        message,
+      );
+    } catch (
+      sendError
+    ) {
+      console.error(
+        "[Chat] erro ao enviar mensagem privada:",
+        sendError,
+      );
+
+      setError(
+        sendError instanceof Error
+          ? sendError.message
+          : "Não foi possível enviar a mensagem.",
+      );
+    } finally {
+      setSending(false);
+    }
   };
+
+  /*
+   * =========================================================
+   * CONVERSA INVÁLIDA
+   * =========================================================
+   */
 
   if (
     !friendId ||
@@ -176,7 +522,7 @@ export default function DirectChatScreen() {
                 styles.errorTitle
               }
             >
-              Conversa não encontrada
+              Amigo não encontrado
             </Text>
 
             <Text
@@ -184,12 +530,13 @@ export default function DirectChatScreen() {
                 styles.errorText
               }
             >
-              Não foi possível carregar esta
-              conversa.
+              Não foi possível carregar esta conversa.
             </Text>
 
             <Pressable
-              onPress={handleBack}
+              onPress={
+                handleBack
+              }
               style={({ pressed }) => [
                 styles.errorButton,
                 pressed &&
@@ -211,17 +558,22 @@ export default function DirectChatScreen() {
   }
 
   const isOnline =
-    friend.status === "online";
+    (presenceStatuses[friend.id] ?? friend.status) ===
+    "ONLINE";
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={
+        styles.container
+      }
       behavior={
         Platform.OS === "ios"
           ? "padding"
           : undefined
       }
-      keyboardVerticalOffset={90}
+      keyboardVerticalOffset={
+        90
+      }
     >
       <ScreenContainer
         maxWidth={820}
@@ -231,9 +583,15 @@ export default function DirectChatScreen() {
             styles.chatContainer
           }
         >
-          <View style={styles.header}>
+          <View
+            style={
+              styles.header
+            }
+          >
             <Pressable
-              onPress={handleBack}
+              onPress={
+                handleBack
+              }
               style={({ pressed }) => [
                 styles.backButton,
                 pressed &&
@@ -245,32 +603,37 @@ export default function DirectChatScreen() {
                   styles.backButtonText
                 }
               >
-                ←
+                ‹
               </Text>
             </Pressable>
 
-            <View
-              style={
-                styles.avatarContainer
-              }
-            >
+            {friend.avatar ? (
               <Image
                 source={{
-                  uri: friend.avatar,
+                  uri:
+                    friend.avatar,
                 }}
-                style={styles.avatar}
+                style={
+                  styles.headerAvatar
+                }
               />
-
+            ) : (
               <View
-                style={[
-                  styles.statusDot,
-
-                  isOnline
-                    ? styles.onlineDot
-                    : styles.offlineDot,
-                ]}
-              />
-            </View>
+                style={
+                  styles.headerAvatarPlaceholder
+                }
+              >
+                <Text
+                  style={
+                    styles.headerAvatarText
+                  }
+                >
+                  {friend.name
+                    .charAt(0)
+                    .toUpperCase()}
+                </Text>
+              </View>
+            )}
 
             <View
               style={
@@ -279,20 +642,20 @@ export default function DirectChatScreen() {
             >
               <Text
                 style={
-                  styles.friendName
+                  styles.headerName
                 }
-                numberOfLines={1}
+                numberOfLines={
+                  1
+                }
               >
                 {friend.name}
               </Text>
 
               <Text
                 style={[
-                  styles.friendStatus,
-
-                  isOnline
-                    ? styles.onlineText
-                    : styles.offlineText,
+                  styles.headerStatus,
+                  isOnline &&
+                    styles.onlineText,
                 ]}
               >
                 {isOnline
@@ -300,102 +663,113 @@ export default function DirectChatScreen() {
                   : "Offline"}
               </Text>
             </View>
+
+            {connecting ? (
+              <ActivityIndicator
+                size="small"
+                color="#FFC400"
+              />
+            ) : null}
           </View>
 
-          {directMessages.length ===
-          0 ? (
+          {error ? (
             <View
               style={
-                styles.emptyContainer
+                styles.errorBanner
               }
             >
-              <View
-                style={
-                  styles.emptyIconContainer
-                }
-              >
-                <Text
-                  style={
-                    styles.emptyIcon
-                  }
-                >
-                  💬
-                </Text>
-              </View>
-
               <Text
                 style={
-                  styles.emptyTitle
+                  styles.errorBannerText
                 }
               >
-                Comece a conversa
+                {error}
               </Text>
+            </View>
+          ) : null}
+
+          {loading ? (
+            <View
+              style={
+                styles.loadingContainer
+              }
+            >
+              <ActivityIndicator
+                size="small"
+                color="#FFC400"
+              />
 
               <Text
                 style={
-                  styles.emptyText
+                  styles.loadingText
                 }
               >
-                Envie uma mensagem para{" "}
-                {friend.name}.
+                Carregando conversa...
               </Text>
             </View>
           ) : (
             <FlatList
               data={
-                directMessages
+                messages
               }
               keyExtractor={(
                 item,
-              ) => item.id}
+              ) =>
+                item.id
+              }
+              contentContainerStyle={
+                messages.length >
+                0
+                  ? styles.messagesContent
+                  : styles.emptyMessages
+              }
               showsVerticalScrollIndicator={
                 false
               }
-              contentContainerStyle={
-                styles.messagesContent
-              }
+              keyboardShouldPersistTaps="handled"
               renderItem={({
                 item,
               }) => {
-                const isOwnMessage =
-                  item.userId ===
+                const isMine =
+                  item.senderId ===
                   user.id;
 
                 return (
                   <View
                     style={[
                       styles.messageRow,
-
-                      isOwnMessage
-                        ? styles.ownMessageRow
-                        : styles.otherMessageRow,
+                      isMine &&
+                        styles.myMessageRow,
                     ]}
                   >
                     <View
                       style={[
                         styles.messageBubble,
-
-                        isOwnMessage
-                          ? styles.ownMessageBubble
-                          : styles.otherMessageBubble,
+                        isMine
+                          ? styles.myBubble
+                          : styles.otherBubble,
                       ]}
                     >
-                      {!isOwnMessage && (
+                      {!isMine &&
+                      item.sender ? (
                         <Text
                           style={
                             styles.messageUser
                           }
                         >
-                          {item.userName}
+                          {
+                            item
+                              .sender
+                              .name
+                          }
                         </Text>
-                      )}
+                      ) : null}
 
                       <Text
                         style={[
                           styles.messageText,
-
-                          isOwnMessage &&
-                            styles.ownMessageText,
+                          isMine &&
+                            styles.myMessageText,
                         ]}
                       >
                         {item.text}
@@ -404,9 +778,8 @@ export default function DirectChatScreen() {
                       <Text
                         style={[
                           styles.messageTime,
-
-                          isOwnMessage &&
-                            styles.ownMessageTime,
+                          isMine &&
+                            styles.myMessageTime,
                         ]}
                       >
                         {formatMessageTime(
@@ -417,12 +790,44 @@ export default function DirectChatScreen() {
                   </View>
                 );
               }}
+              ListEmptyComponent={
+                <View
+                  style={
+                    styles.emptyConversation
+                  }
+                >
+                  <Text
+                    style={
+                      styles.emptyIcon
+                    }
+                  >
+                    💬
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.emptyTitle
+                    }
+                  >
+                    Comece a conversa
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.emptyText
+                    }
+                  >
+                    Envie a primeira mensagem para{" "}
+                    {friend.name}.
+                  </Text>
+                </View>
+              }
             />
           )}
 
           <View
             style={
-              styles.inputArea
+              styles.inputContainer
             }
           >
             <TextInput
@@ -430,49 +835,61 @@ export default function DirectChatScreen() {
               onChangeText={
                 setText
               }
-              placeholder={`Mensagem para ${friend.name}...`}
+              placeholder="Digite uma mensagem..."
               placeholderTextColor="#777777"
-              style={styles.input}
+              style={
+                styles.input
+              }
               multiline
-              maxLength={1000}
-              returnKeyType="send"
-              blurOnSubmit={false}
+              maxLength={2000}
+              editable={
+                !sending
+              }
               onSubmitEditing={() => {
                 if (
                   Platform.OS ===
                   "web"
                 ) {
-                  handleSend();
+                  void handleSend();
                 }
               }}
             />
 
             <Pressable
               disabled={
-                !text.trim()
+                !text.trim() ||
+                sending
               }
-              onPress={
-                handleSend
-              }
+              onPress={() => {
+                void handleSend();
+              }}
               style={({ pressed }) => [
                 styles.sendButton,
 
-                !text.trim() &&
+                (!text.trim() ||
+                  sending) &&
                   styles.sendButtonDisabled,
 
                 pressed &&
-                  text.trim().length >
-                    0 &&
+                  text.trim() &&
+                  !sending &&
                   styles.pressed,
               ]}
             >
-              <Text
-                style={
-                  styles.sendButtonText
-                }
-              >
-                Enviar
-              </Text>
+              {sending ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#000000"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.sendButtonText
+                  }
+                >
+                  ➤
+                </Text>
+              )}
             </Pressable>
           </View>
         </View>
@@ -481,349 +898,331 @@ export default function DirectChatScreen() {
   );
 }
 
-function createDirectConversationId(
-  userId: string,
-  friendId: string,
-) {
-  const ids = [
-    userId,
-    friendId,
-  ].sort();
-
-  return `direct-${ids[0]}-${ids[1]}`;
-}
-
-function getTimestamp(
-  value?: string,
-) {
-  if (!value) {
-    return 0;
-  }
-
-  const timestamp =
-    new Date(value).getTime();
-
-  return Number.isNaN(timestamp)
-    ? 0
-    : timestamp;
-}
-
-function formatMessageTime(
-  value: string,
-) {
-  const date =
-    new Date(value);
-
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
-    return "";
-  }
-
-  return date.toLocaleTimeString(
-    "pt-BR",
-    {
-      hour: "2-digit",
-      minute: "2-digit",
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#090909",
     },
-  );
-}
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#090909",
-  },
+    chatContainer: {
+      flex: 1,
+      minHeight: 0,
+    },
 
-  chatContainer: {
-    flex: 1,
-    width: "100%",
-    minHeight: 0,
-  },
+    header: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        "#292929",
+    },
 
-  header: {
-    height: 78,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#111111",
-    borderBottomWidth: 1,
-    borderBottomColor: "#292929",
-    paddingHorizontal: 14,
-  },
+    backButton: {
+      width: 42,
+      height: 42,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      marginRight: 8,
+    },
 
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#1B1B1B",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
+    backButtonText: {
+      color: "#FFC400",
+      fontSize: 36,
+      lineHeight: 38,
+    },
 
-  backButtonText: {
-    color: "#FFC400",
-    fontSize: 25,
-    fontWeight: "700",
-    lineHeight: 27,
-  },
+    headerAvatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor:
+        "#333333",
+    },
 
-  avatarContainer: {
-    width: 48,
-    height: 48,
-    position: "relative",
-    marginRight: 12,
-  },
+    headerAvatarPlaceholder: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor:
+        "#2A2300",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
 
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#333333",
-  },
+    headerAvatarText: {
+      color: "#FFC400",
+      fontSize: 18,
+      fontWeight:
+        "800",
+    },
 
-  statusDot: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: "#111111",
-  },
+    headerInfo: {
+      flex: 1,
+      marginLeft: 12,
+    },
 
-  onlineDot: {
-    backgroundColor: "#4CAF50",
-  },
+    headerName: {
+      color: "#FFFFFF",
+      fontSize: 17,
+      fontWeight:
+        "800",
+    },
 
-  offlineDot: {
-    backgroundColor: "#777777",
-  },
+    headerStatus: {
+      color: "#777777",
+      fontSize: 12,
+      marginTop: 3,
+    },
 
-  headerInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
+    onlineText: {
+      color: "#4CAF50",
+    },
 
-  friendName: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "800",
-  },
+    loadingContainer: {
+      flex: 1,
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
 
-  friendStatus: {
-    fontSize: 11,
-    fontWeight: "700",
-    marginTop: 3,
-  },
+    loadingText: {
+      color: "#888888",
+      fontSize: 13,
+      marginTop: 10,
+    },
 
-  onlineText: {
-    color: "#4CAF50",
-  },
+    messagesContent: {
+      paddingVertical: 18,
+    },
 
-  offlineText: {
-    color: "#888888",
-  },
+    emptyMessages: {
+      flexGrow: 1,
+      justifyContent:
+        "center",
+      paddingVertical: 30,
+    },
 
-  messagesContent: {
-    flexGrow: 1,
-    justifyContent: "flex-end",
-    paddingHorizontal: 14,
-    paddingTop: 18,
-    paddingBottom: 12,
-  },
+    emptyConversation: {
+      alignItems:
+        "center",
+      paddingHorizontal: 20,
+    },
 
-  messageRow: {
-    width: "100%",
-    marginBottom: 10,
-  },
+    emptyIcon: {
+      fontSize: 42,
+    },
 
-  ownMessageRow: {
-    alignItems: "flex-end",
-  },
+    emptyTitle: {
+      color: "#FFFFFF",
+      fontSize: 18,
+      fontWeight:
+        "800",
+      marginTop: 12,
+    },
 
-  otherMessageRow: {
-    alignItems: "flex-start",
-  },
+    emptyText: {
+      color: "#888888",
+      fontSize: 14,
+      textAlign:
+        "center",
+      marginTop: 6,
+    },
 
-  messageBubble: {
-    maxWidth: "82%",
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
+    messageRow: {
+      width: "100%",
+      alignItems:
+        "flex-start",
+      marginBottom: 10,
+    },
 
-  ownMessageBubble: {
-    backgroundColor: "#FFC400",
-    borderBottomRightRadius: 5,
-  },
+    myMessageRow: {
+      alignItems:
+        "flex-end",
+    },
 
-  otherMessageBubble: {
-    backgroundColor: "#1B1B1B",
-    borderWidth: 1,
-    borderColor: "#292929",
-    borderBottomLeftRadius: 5,
-  },
+    messageBubble: {
+      maxWidth: "78%",
+      borderRadius: 18,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderWidth: 1,
+    },
 
-  messageUser: {
-    color: "#FFC400",
-    fontSize: 11,
-    fontWeight: "800",
-    marginBottom: 4,
-  },
+    otherBubble: {
+      backgroundColor:
+        "#1B1B1B",
+      borderColor:
+        "#292929",
+    },
 
-  messageText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    lineHeight: 20,
-  },
+    myBubble: {
+      backgroundColor:
+        "#FFC400",
+      borderColor:
+        "#FFC400",
+    },
 
-  ownMessageText: {
-    color: "#000000",
-  },
+    messageUser: {
+      color: "#FFC400",
+      fontSize: 12,
+      fontWeight:
+        "800",
+      marginBottom: 4,
+    },
 
-  messageTime: {
-    color: "#777777",
-    fontSize: 9,
-    textAlign: "right",
-    marginTop: 5,
-  },
+    messageText: {
+      color: "#FFFFFF",
+      fontSize: 15,
+      lineHeight: 21,
+    },
 
-  ownMessageTime: {
-    color: "#5F5200",
-  },
+    myMessageText: {
+      color: "#000000",
+    },
 
-  inputArea: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    padding: 12,
-    backgroundColor: "#111111",
-    borderTopWidth: 1,
-    borderTopColor: "#292929",
-    gap: 10,
-  },
+    messageTime: {
+      color: "#777777",
+      fontSize: 10,
+      marginTop: 4,
+      alignSelf:
+        "flex-end",
+    },
 
-  input: {
-    flex: 1,
-    maxHeight: 120,
-    minHeight: 48,
-    backgroundColor: "#1B1B1B",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#292929",
-    color: "#FFFFFF",
-    fontSize: 15,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
+    myMessageTime: {
+      color: "#594800",
+    },
 
-  sendButton: {
-    minHeight: 48,
-    backgroundColor: "#FFC400",
-    borderRadius: 14,
-    paddingHorizontal: 17,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    inputContainer: {
+      flexDirection:
+        "row",
+      alignItems:
+        "flex-end",
+      paddingVertical: 12,
+      borderTopWidth: 1,
+      borderTopColor:
+        "#292929",
+      gap: 10,
+    },
 
-  sendButtonDisabled: {
-    opacity: 0.35,
-  },
+    input: {
+      flex: 1,
+      minHeight: 46,
+      maxHeight: 120,
+      backgroundColor:
+        "#1B1B1B",
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor:
+        "#333333",
+      color: "#FFFFFF",
+      paddingHorizontal: 15,
+      paddingVertical: 12,
+      fontSize: 15,
+    },
 
-  sendButtonText: {
-    color: "#000000",
-    fontSize: 13,
-    fontWeight: "800",
-  },
+    sendButton: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor:
+        "#FFC400",
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+    },
 
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 30,
-  },
+    sendButtonDisabled: {
+      opacity: 0.35,
+    },
 
-  emptyIconContainer: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    backgroundColor: "#2A2300",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    sendButtonText: {
+      color: "#000000",
+      fontSize: 20,
+      fontWeight:
+        "800",
+    },
 
-  emptyIcon: {
-    fontSize: 34,
-  },
+    errorBanner: {
+      backgroundColor:
+        "#2A1700",
+      borderWidth: 1,
+      borderColor:
+        "#5A3500",
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      marginTop: 10,
+    },
 
-  emptyTitle: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 16,
-  },
+    errorBannerText: {
+      color: "#FFC400",
+      fontSize: 12,
+    },
 
-  emptyText: {
-    color: "#888888",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 7,
-  },
+    errorScreen: {
+      flex: 1,
+      backgroundColor:
+        "#090909",
+    },
 
-  errorScreen: {
-    flex: 1,
-    backgroundColor: "#090909",
-    justifyContent: "center",
-  },
+    errorContainer: {
+      alignItems:
+        "center",
+      justifyContent:
+        "center",
+      paddingTop: 80,
+    },
 
-  errorContainer: {
-    width: "100%",
-    backgroundColor: "#1B1B1B",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#292929",
-    padding: 24,
-    alignItems: "center",
-  },
+    errorIcon: {
+      fontSize: 48,
+    },
 
-  errorIcon: {
-    fontSize: 42,
-  },
+    errorTitle: {
+      color: "#FFFFFF",
+      fontSize: 22,
+      fontWeight:
+        "800",
+      marginTop: 16,
+      textAlign:
+        "center",
+    },
 
-  errorTitle: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "800",
-    textAlign: "center",
-    marginTop: 14,
-  },
+    errorText: {
+      color: "#888888",
+      fontSize: 14,
+      marginTop: 8,
+      textAlign:
+        "center",
+    },
 
-  errorText: {
-    color: "#888888",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-    marginTop: 8,
-  },
+    errorButton: {
+      backgroundColor:
+        "#FFC400",
+      borderRadius: 14,
+      paddingHorizontal: 20,
+      paddingVertical: 13,
+      marginTop: 22,
+    },
 
-  errorButton: {
-    backgroundColor: "#FFC400",
-    borderRadius: 14,
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-    marginTop: 20,
-  },
+    errorButtonText: {
+      color: "#000000",
+      fontSize: 14,
+      fontWeight:
+        "800",
+    },
 
-  errorButtonText: {
-    color: "#000000",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
-  pressed: {
-    opacity: 0.8,
-  },
-});
+    pressed: {
+      opacity: 0.8,
+    },
+  });

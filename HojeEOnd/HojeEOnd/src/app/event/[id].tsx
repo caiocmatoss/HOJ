@@ -1,4 +1,10 @@
 import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -7,483 +13,571 @@ import {
   View,
 } from "react-native";
 
-import {
-  router,
-  useLocalSearchParams,
-} from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 
-import { ScreenContainer } from "@/components/ui/ScreenContainer";
+import { getEvent, type ApiEvent } from "@/services/api";
 
-import { events } from "@/data/events";
-
-export default function EventDetailScreen() {
-  const { id } =
+export default function EventDetailsScreen() {
+  const params =
     useLocalSearchParams<{
-      id?: string | string[];
+      id?: string;
     }>();
 
   const eventId =
-    Array.isArray(id)
-      ? id[0]
-      : id;
+    typeof params.id === "string"
+      ? params.id
+      : Array.isArray(params.id)
+        ? params.id[0]
+        : "";
 
-  const event = events.find(
-    (item) =>
-      item.id === eventId,
+  const [
+    event,
+    setEvent,
+  ] = useState<ApiEvent | null>(
+    null,
   );
 
-  const handleBack = () => {
-    router.back();
-  };
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true);
 
-  if (!event) {
-    return (
-      <View
-        style={
-          styles.notFoundScreen
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadEvent =
+      async () => {
+        if (!eventId) {
+          if (mounted) {
+            setError(
+              "Evento inválido.",
+            );
+            setIsLoading(false);
+          }
+
+          return;
         }
-      >
-        <ScreenContainer maxWidth={760}>
-          <View
-            style={
-              styles.notFoundContainer
-            }
-          >
-            <Text
-              style={
-                styles.notFoundIcon
-              }
-            >
-              🎉
-            </Text>
 
-            <Text
-              style={
-                styles.notFoundTitle
-              }
-            >
-              Evento não encontrado
-            </Text>
+        try {
+          setIsLoading(true);
+          setError(null);
 
-            <Text
-              style={
-                styles.notFoundText
-              }
-            >
-              Este evento pode ter sido removido ou não está mais disponível.
-            </Text>
+          const response =
+            await getEvent(eventId);
 
-            <Pressable
-              onPress={handleBack}
-              style={({ pressed }) => [
-                styles.backButton,
-                pressed &&
-                  styles.buttonPressed,
-              ]}
-            >
-              <Text
-                style={
-                  styles.backButtonText
-                }
-              >
-                Voltar
-              </Text>
-            </Pressable>
-          </View>
-        </ScreenContainer>
+          if (!mounted) {
+            return;
+          }
+
+          setEvent(response);
+        } catch {
+          if (!mounted) {
+            return;
+          }
+
+          setError(
+            "Não foi possível carregar os detalhes do evento.",
+          );
+        } finally {
+          if (mounted) {
+            setIsLoading(false);
+          }
+        }
+      };
+
+    loadEvent();
+
+    return () => {
+      mounted = false;
+    };
+  }, [eventId]);
+
+  if (isLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator
+          size="large"
+          color="#FFC400"
+        />
+
+        <Text
+          style={styles.loadingText}
+        >
+          Carregando evento...
+        </Text>
       </View>
     );
   }
 
+  if (error || !event) {
+    return (
+      <View style={styles.center}>
+        <Text
+          style={styles.errorTitle}
+        >
+          Não foi possível abrir o evento
+        </Text>
+
+        <Text
+          style={styles.errorText}
+        >
+          {error ??
+            "Evento não encontrado."}
+        </Text>
+
+        <Pressable
+          style={styles.backButton}
+          onPress={() =>
+            router.back()
+          }
+        >
+          <Text
+            style={styles.backButtonText}
+          >
+            Voltar
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const venue =
+    event.venue;
+
+  const venueName =
+    event.venueName ??
+    venue?.name ??
+    "Local não informado";
+
+  const price =
+    event.price !== null &&
+    event.price !== undefined
+      ? Number(event.price)
+      : 0;
+
   const formattedPrice =
-    event.price !== undefined &&
-    event.price > 0
-      ? `R$ ${event.price
+    price > 0
+      ? `R$ ${price
           .toFixed(2)
           .replace(".", ",")}`
       : "Gratuito";
 
+  const formattedDate =
+    formatDate(event.date);
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={
-        styles.scrollContent
-      }
-      showsVerticalScrollIndicator={
-        false
-      }
-    >
-      <ScreenContainer maxWidth={900}>
-        <View style={styles.content}>
+    <View style={styles.page}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={
+          styles.content
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
+        <View
+          style={styles.header}
+        >
           <Pressable
-            onPress={handleBack}
-            style={({ pressed }) => [
-              styles.topBackButton,
-              pressed &&
-                styles.buttonPressed,
-            ]}
+            style={styles.backCircle}
+            onPress={() =>
+              router.back()
+            }
           >
             <Text
-              style={
-                styles.topBackButtonText
-              }
+              style={styles.backIcon}
             >
-              ← Voltar
+              ‹
             </Text>
           </Pressable>
 
-          <View
-            style={
-              styles.imageContainer
-            }
+          <Text
+            style={styles.headerTitle}
+            numberOfLines={1}
           >
+            Evento
+          </Text>
+
+          <View
+            style={styles.headerSpacer}
+          />
+        </View>
+
+        <View
+          style={styles.hero}
+        >
+          {event.image ? (
             <Image
               source={{
                 uri: event.image,
               }}
-              style={styles.image}
+              style={styles.heroImage}
               resizeMode="cover"
             />
-
-            {event.isLive && (
-              <View
-                style={
-                  styles.liveBadge
-                }
-              >
-                <Text
-                  style={
-                    styles.liveBadgeText
-                  }
-                >
-                  AO VIVO
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.heroCard}>
-            <Text
-              style={
-                styles.category
-              }
-            >
-              {event.category}
-            </Text>
-
-            <Text style={styles.title}>
-              {event.title}
-            </Text>
-
-            <Text style={styles.venue}>
-              📍 {event.venueName}
-            </Text>
-
+          ) : (
             <View
-              style={styles.infoGrid}
+              style={
+                styles.heroFallback
+              }
             >
-              <View
-                style={
-                  styles.infoItem
-                }
-              >
-                <Text
-                  style={
-                    styles.infoIcon
-                  }
-                >
-                  📅
-                </Text>
-
-                <View
-                  style={
-                    styles.infoContent
-                  }
-                >
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Data
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.infoValue
-                    }
-                  >
-                    {event.date}
-                  </Text>
-                </View>
-              </View>
-
-              <View
-                style={
-                  styles.infoItem
-                }
-              >
-                <Text
-                  style={
-                    styles.infoIcon
-                  }
-                >
-                  🕒
-                </Text>
-
-                <View
-                  style={
-                    styles.infoContent
-                  }
-                >
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Horário
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.infoValue
-                    }
-                  >
-                    {event.time}
-                  </Text>
-                </View>
-              </View>
-
-              <View
-                style={
-                  styles.infoItem
-                }
-              >
-                <Text
-                  style={
-                    styles.infoIcon
-                  }
-                >
-                  📍
-                </Text>
-
-                <View
-                  style={
-                    styles.infoContent
-                  }
-                >
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Distância
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.infoValue
-                    }
-                  >
-                    {event.distance}
-                  </Text>
-                </View>
-              </View>
-
-              <View
-                style={
-                  styles.infoItem
-                }
-              >
-                <Text
-                  style={
-                    styles.infoIcon
-                  }
-                >
-                  👥
-                </Text>
-
-                <View
-                  style={
-                    styles.infoContent
-                  }
-                >
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Participantes
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.infoValue
-                    }
-                  >
-                    {event.attendees.toLocaleString(
-                      "pt-BR",
-                    )}{" "}
-                    pessoas
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          <View
-            style={
-              styles.priceContainer
-            }
-          >
-            <View>
               <Text
                 style={
-                  styles.priceLabel
+                  styles.heroFallbackText
                 }
               >
-                Ingresso
-              </Text>
-
-              <Text
-                style={
-                  styles.priceHint
-                }
-              >
-                Valor atual
+                HOJÉ OND
               </Text>
             </View>
+          )}
 
-            <Text style={styles.price}>
-              {formattedPrice}
-            </Text>
-          </View>
-
-          <View
-            style={
-              styles.descriptionCard
-            }
-          >
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
-              Sobre o evento
-            </Text>
-
-            <Text
-              style={
-                styles.description
-              }
-            >
-              {event.description}
-            </Text>
-          </View>
-
-          <View
-            style={
-              styles.actionsCard
-            }
-          >
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
-              Ações
-            </Text>
-
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname:
-                    "/venue/[id]",
-                  params: {
-                    id: event.venueId,
-                  },
-                })
-              }
-              style={({ pressed }) => [
-                styles.primaryButton,
-
-                pressed &&
-                  styles.buttonPressed,
-              ]}
+          {event.isLive && (
+            <View
+              style={styles.liveBadge}
             >
               <Text
-                style={
-                  styles.primaryButtonText
-                }
+                style={styles.liveText}
               >
-                📍 Ver local
+                AO VIVO
               </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={handleBack}
-              style={({ pressed }) => [
-                styles.secondaryButton,
-
-                pressed &&
-                  styles.buttonPressed,
-              ]}
-            >
-              <Text
-                style={
-                  styles.secondaryButtonText
-                }
-              >
-                Voltar
-              </Text>
-            </Pressable>
-          </View>
+            </View>
+          )}
         </View>
-      </ScreenContainer>
-    </ScrollView>
+
+        <View
+          style={styles.body}
+        >
+          <Text
+            style={styles.category}
+          >
+            {event.category}
+          </Text>
+
+          <Text
+            style={styles.title}
+          >
+            {event.title}
+          </Text>
+
+          <View
+            style={styles.infoCard}
+          >
+            <InfoRow
+              icon="📅"
+              label="Data"
+              value={
+                formattedDate
+              }
+            />
+
+            <InfoRow
+              icon="🕐"
+              label="Horário"
+              value={
+                event.time
+              }
+            />
+
+            <InfoRow
+              icon="📍"
+              label="Local"
+              value={
+                venueName
+              }
+            />
+
+            <InfoRow
+              icon="👥"
+              label="Pessoas"
+              value={`${event.attendees.toLocaleString(
+                "pt-BR",
+              )} pessoas`}
+            />
+
+            <InfoRow
+              icon="🎟️"
+              label="Entrada"
+              value={
+                formattedPrice
+              }
+            />
+          </View>
+
+          {event.description ? (
+            <>
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Sobre o evento
+              </Text>
+
+              <Text
+                style={
+                  styles.description
+                }
+              >
+                {event.description}
+              </Text>
+            </>
+          ) : null}
+
+          {venue ? (
+            <>
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Sobre o local
+              </Text>
+
+              <Pressable
+                style={
+                  styles.venueCard
+                }
+                onPress={() =>
+                  router.push(
+                    `/venue/${venue.id}`,
+                  )
+                }
+              >
+                {venue.image ? (
+                  <Image
+                    source={{
+                      uri: venue.image,
+                    }}
+                    style={
+                      styles.venueImage
+                    }
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={
+                      styles.venueImageFallback
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.venueFallbackText
+                      }
+                    >
+                      HOJÉ OND
+                    </Text>
+                  </View>
+                )}
+
+                <View
+                  style={
+                    styles.venueContent
+                  }
+                >
+                  <Text
+                    style={
+                      styles.venueName
+                    }
+                    numberOfLines={1}
+                  >
+                    {venue.name}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.venueCategory
+                    }
+                  >
+                    {venue.category}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.venueAddress
+                    }
+                    numberOfLines={2}
+                  >
+                    {venue.address}
+                  </Text>
+
+                  {venue.rating !==
+                    null &&
+                    venue.rating !==
+                      undefined && (
+                      <Text
+                        style={
+                          styles.rating
+                        }
+                      >
+                        ★{" "}
+                        {Number(
+                          venue.rating,
+                        ).toFixed(
+                          1,
+                        )}
+                      </Text>
+                    )}
+                </View>
+              </Pressable>
+            </>
+          ) : null}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View
+      style={styles.infoRow}
+    >
+      <Text
+        style={styles.infoIcon}
+      >
+        {icon}
+      </Text>
+
+      <View
+        style={styles.infoText}
+      >
+        <Text
+          style={
+            styles.infoLabel
+          }
+        >
+          {label}
+        </Text>
+
+        <Text
+          style={
+            styles.infoValue
+          }
+          numberOfLines={2}
+        >
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function formatDate(
+  value: string,
+) {
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return value;
+  }
+
+  return date.toLocaleDateString(
+    "pt-BR",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    },
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  page: {
     flex: 1,
     backgroundColor: "#090909",
   },
 
-  scrollContent: {
-    paddingTop: 20,
-    paddingBottom: 50,
+  scroll: {
+    flex: 1,
   },
 
   content: {
-    width: "100%",
+    paddingBottom: 50,
   },
 
-  topBackButton: {
-    alignSelf: "flex-start",
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    marginBottom: 12,
+  header: {
+    height: 64,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 
-  topBackButtonText: {
+  backCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#1B1B1B",
+    borderWidth: 1,
+    borderColor: "#292929",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  backIcon: {
     color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
+    fontSize: 32,
+    lineHeight: 34,
+    fontWeight: "300",
   },
 
-  imageContainer: {
+  headerTitle: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "center",
+    marginHorizontal: 12,
+  },
+
+  headerSpacer: {
+    width: 42,
+  },
+
+  hero: {
     width: "100%",
-    height: 300,
+    height: 260,
     backgroundColor: "#1B1B1B",
     position: "relative",
-    borderRadius: 20,
     overflow: "hidden",
   },
 
-  image: {
+  heroImage: {
     width: "100%",
     height: "100%",
+  },
+
+  heroFallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#202020",
+  },
+
+  heroFallbackText: {
+    color: "#FFC400",
+    fontSize: 26,
+    fontWeight: "900",
   },
 
   liveBadge: {
@@ -491,228 +585,195 @@ const styles = StyleSheet.create({
     top: 16,
     left: 16,
     backgroundColor: "#D32F2F",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 12,
   },
 
-  liveBadgeText: {
+  liveText: {
     color: "#FFFFFF",
     fontSize: 11,
-    fontWeight: "800",
+    fontWeight: "900",
   },
 
-  heroCard: {
-    backgroundColor: "#1B1B1B",
-    borderRadius: 18,
-    padding: 18,
-    marginTop: 18,
-    borderWidth: 1,
-    borderColor: "#292929",
+  body: {
+    paddingHorizontal: 18,
+    paddingTop: 22,
   },
 
   category: {
     color: "#FFC400",
     fontSize: 13,
     fontWeight: "800",
-    marginBottom: 8,
     textTransform: "uppercase",
   },
 
   title: {
     color: "#FFFFFF",
     fontSize: 30,
-    fontWeight: "800",
     lineHeight: 36,
+    fontWeight: "900",
+    marginTop: 8,
   },
 
-  venue: {
-    color: "#CCCCCC",
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 10,
-  },
-
-  infoGrid: {
-    marginTop: 20,
-    gap: 10,
-  },
-
-  infoItem: {
-    flexDirection: "row",
-    alignItems: "center",
+  infoCard: {
+    marginTop: 22,
     backgroundColor: "#151515",
-    borderRadius: 14,
-    padding: 13,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: "#292929",
+    padding: 16,
+  },
+
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 56,
+    borderBottomWidth: 1,
+    borderBottomColor: "#242424",
+  },
+
+  infoRowLast: {
+    borderBottomWidth: 0,
   },
 
   infoIcon: {
-    fontSize: 20,
-    marginRight: 12,
+    width: 34,
+    fontSize: 18,
   },
 
-  infoContent: {
+  infoText: {
     flex: 1,
-    minWidth: 0,
   },
 
   infoLabel: {
     color: "#777777",
     fontSize: 11,
     fontWeight: "700",
-    textTransform: "uppercase",
   },
 
   infoValue: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
     marginTop: 3,
-  },
-
-  priceContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#1B1B1B",
-    borderRadius: 18,
-    padding: 18,
-    marginTop: 18,
-    borderWidth: 1,
-    borderColor: "#292929",
-  },
-
-  priceLabel: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-
-  priceHint: {
-    color: "#777777",
-    fontSize: 11,
-    marginTop: 3,
-  },
-
-  price: {
-    color: "#FFC400",
-    fontSize: 22,
-    fontWeight: "800",
-  },
-
-  descriptionCard: {
-    backgroundColor: "#1B1B1B",
-    borderRadius: 18,
-    padding: 18,
-    marginTop: 18,
-    borderWidth: 1,
-    borderColor: "#292929",
   },
 
   sectionTitle: {
     color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "800",
-    marginBottom: 12,
+    fontSize: 21,
+    fontWeight: "900",
+    marginTop: 28,
+    marginBottom: 10,
   },
 
   description: {
-    color: "#C7C7C7",
+    color: "#AAAAAA",
     fontSize: 15,
-    lineHeight: 24,
+    lineHeight: 23,
   },
 
-  actionsCard: {
-    backgroundColor: "#1B1B1B",
+  venueCard: {
+    backgroundColor: "#151515",
     borderRadius: 18,
-    padding: 18,
-    marginTop: 18,
     borderWidth: 1,
     borderColor: "#292929",
+    overflow: "hidden",
+    flexDirection: "row",
   },
 
-  primaryButton: {
-    backgroundColor: "#FFC400",
-    borderRadius: 14,
-    paddingVertical: 16,
+  venueImage: {
+    width: 120,
+    height: 130,
+  },
+
+  venueImageFallback: {
+    width: 120,
+    height: 130,
+    backgroundColor: "#202020",
     alignItems: "center",
-  },
-
-  primaryButtonText: {
-    color: "#000000",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-
-  secondaryButton: {
-    backgroundColor: "#151515",
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 12,
-  },
-
-  secondaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  buttonPressed: {
-    opacity: 0.8,
-  },
-
-  notFoundScreen: {
-    flex: 1,
-    backgroundColor: "#090909",
     justifyContent: "center",
   },
 
-  notFoundContainer: {
-    width: "100%",
-    backgroundColor: "#1B1B1B",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#292929",
-    padding: 24,
-    alignItems: "center",
+  venueFallbackText: {
+    color: "#FFC400",
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center",
   },
 
-  notFoundIcon: {
-    fontSize: 42,
+  venueContent: {
+    flex: 1,
+    padding: 14,
   },
 
-  notFoundTitle: {
+  venueName: {
     color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 14,
-    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "900",
   },
 
-  notFoundText: {
-    color: "#888888",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
+  venueCategory: {
+    color: "#FFC400",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+
+  venueAddress: {
+    color: "#999999",
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 8,
   },
 
+  rating: {
+    color: "#FFC400",
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: 8,
+  },
+
+  center: {
+    flex: 1,
+    backgroundColor: "#090909",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 30,
+  },
+
+  loadingText: {
+    color: "#AAAAAA",
+    fontSize: 14,
+    marginTop: 12,
+  },
+
+  errorTitle: {
+    color: "#FFFFFF",
+    fontSize: 21,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  errorText: {
+    color: "#999999",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 10,
+    lineHeight: 21,
+  },
+
   backButton: {
+    marginTop: 24,
     backgroundColor: "#FFC400",
-    borderRadius: 14,
     paddingHorizontal: 24,
-    paddingVertical: 14,
-    marginTop: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
 
   backButtonText: {
     color: "#000000",
-    fontSize: 15,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "900",
   },
 });

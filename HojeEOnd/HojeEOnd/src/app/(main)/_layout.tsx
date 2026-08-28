@@ -6,7 +6,10 @@ import {
   Ionicons,
 } from "@expo/vector-icons";
 
+import { useNotificationStore } from "@/store/notification-store";
+
 export default function MainLayout() {
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
   return (
     <Tabs
       screenOptions={{
@@ -150,6 +153,17 @@ export default function MainLayout() {
               color={color}
               size={size}
             />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: "Avisos",
+          tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? "99+" : unreadCount) : undefined,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "notifications" : "notifications-outline"} color={color} size={size} />
           ),
         }}
       />

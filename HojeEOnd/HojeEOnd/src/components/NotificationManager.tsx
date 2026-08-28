@@ -11,6 +11,9 @@ import {
   useNotificationStore,
 } from "@/store/notification-store";
 
+import { joinNotifications, leaveNotifications, onNewNotification } from "@/services/socket";
+import { useUserStore } from "@/store/user-store";
+
 export default function NotificationManager() {
   const setPermissionStatus =
     useNotificationStore(
@@ -35,6 +38,10 @@ export default function NotificationManager() {
       (state) =>
         state.setError,
     );
+
+  const addNotification = useNotificationStore((state) => state.addNotification);
+  const loadNotifications = useNotificationStore((state) => state.loadNotifications);
+  const accessToken = useUserStore((state) => state.accessToken);
 
   useEffect(() => {
     let mounted = true;
@@ -112,6 +119,26 @@ export default function NotificationManager() {
     setNotificationsEnabled,
     setPermissionStatus,
   ]);
+
+  useEffect(() => {
+    if (!accessToken) {
+      return;
+    }
+
+    let active = true;
+    void loadNotifications();
+    const cleanup = onNewNotification(addNotification);
+    void joinNotifications().catch((error: unknown) => {
+      if (active) {
+        console.error("[Notifications] Socket indisponível:", error);
+      }
+    });
+    return () => {
+      active = false;
+      cleanup();
+      leaveNotifications();
+    };
+  }, [accessToken, addNotification, loadNotifications]);
 
   return null;
 }

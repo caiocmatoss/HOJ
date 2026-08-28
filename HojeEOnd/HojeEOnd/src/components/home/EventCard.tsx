@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+
 import {
   Image,
   Pressable,
@@ -12,11 +13,11 @@ import { OccupancyBadge } from "./OccupancyBadge";
 interface EventCardProps {
   id: string;
   title: string;
-  image: string;
+  image: string | null;
   venueName: string;
   time: string;
   category: string;
-  price?: number;
+  price?: number | string | null;
   attendees: number;
   isLive: boolean;
 }
@@ -33,11 +34,20 @@ export function EventCard({
   isLive,
 }: EventCardProps) {
   const handlePress = () => {
-    router.push({
-      pathname: "/event/[id]",
-      params: { id },
-    });
+    console.log("[EventCard] Abrindo evento:", id);
+
+    router.push(`/event/${id}`);
   };
+
+  const numericPrice =
+    price !== undefined &&
+    price !== null
+      ? Number(price)
+      : 0;
+
+  const hasPrice =
+    Number.isFinite(numericPrice) &&
+    numericPrice > 0;
 
   const occupancy =
     attendees > 1000
@@ -55,11 +65,19 @@ export function EventCard({
       ]}
     >
       <View style={styles.imageContainer}>
-        <Image
-          source={{ uri: image }}
-          style={styles.image}
-          resizeMode="cover"
-        />
+        {image ? (
+          <Image
+            source={{ uri: image }}
+            style={styles.image}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.imageFallback}>
+            <Text style={styles.fallbackText}>
+              HOJÉ OND
+            </Text>
+          </View>
+        )}
 
         {isLive && (
           <View style={styles.liveBadge}>
@@ -92,9 +110,9 @@ export function EventCard({
           {category}
         </Text>
 
-        {price !== undefined && price > 0 ? (
+        {hasPrice ? (
           <Text style={styles.price}>
-            R$ {price.toFixed(2).replace(".", ",")}
+            R$ {numericPrice.toFixed(2).replace(".", ",")}
           </Text>
         ) : (
           <Text style={styles.free}>
@@ -108,7 +126,9 @@ export function EventCard({
           {attendees.toLocaleString("pt-BR")} pessoas
         </Text>
 
-        <OccupancyBadge status={occupancy} />
+        <OccupancyBadge
+          status={occupancy}
+        />
       </View>
     </Pressable>
   );
@@ -128,7 +148,11 @@ const styles = StyleSheet.create({
 
   cardPressed: {
     opacity: 0.82,
-    transform: [{ scale: 0.98 }],
+    transform: [
+      {
+        scale: 0.98,
+      },
+    ],
   },
 
   imageContainer: {
@@ -143,6 +167,19 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
+  },
+
+  imageFallback: {
+    flex: 1,
+    backgroundColor: "#202020",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  fallbackText: {
+    color: "#FFC400",
+    fontSize: 18,
+    fontWeight: "900",
   },
 
   liveBadge: {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   Pressable,
@@ -15,13 +15,14 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
-import { friends } from "@/data/friends";
-import { users } from "@/data/users";
-import { venues } from "@/data/venues";
+import { getFriends, getGroup, getGroupMembers, getVenue, type ApiFriend, type ApiUser, type ApiVenue } from "@/services/api";
+import type { Group } from "@/types/group";
+
 
 import { useGroupStore } from "@/store/group-store";
 import { useInviteStore } from "@/store/invite-store";
 import { useUserStore } from "@/store/user-store";
+import { usePresenceStore } from "@/store/presence-store";
 
 export default function GroupDetailsScreen() {
   const { id } =
@@ -39,6 +40,11 @@ export default function GroupDetailsScreen() {
     setConfirmDelete,
   ] = useState(false);
 
+  const [
+    deleteError,
+    setDeleteError,
+  ] = useState<string | null>(null);
+
   const groups = useGroupStore(
     (state) => state.groups,
   );
@@ -55,6 +61,10 @@ export default function GroupDetailsScreen() {
     (state) => state.deleteGroup,
   );
 
+  const groupProcessing = useGroupStore(
+    (state) => state.processing,
+  );
+
   const invites = useInviteStore(
     (state) => state.invites,
   );
@@ -67,6 +77,57 @@ export default function GroupDetailsScreen() {
     (state) => state.user,
   );
 
+  const [realMembers, setRealMembers] = useState<import("@/services/api").ApiGroupMember[]>([]);
+  const [realFriends, setRealFriends] = useState<ApiFriend[]>([]);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const presenceStatuses = usePresenceStore((state) => state.statuses);
+
+  useEffect(() => {
+    if (!groupId) return;
+    setMembersLoading(true);
+    void getGroupMembers(groupId).then(setRealMembers).catch((error: unknown) => setMembersError(error instanceof Error ? error.message : "Não foi possível carregar os membros.")).finally(() => setMembersLoading(false));
+    void getFriends().then(setRealFriends).catch(() => setRealFriends([]));
+  }, [groupId]);
+
+  const [remoteGroup, setRemoteGroup] = useState<Group | null>(null);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const storeGroup = groups.find((item) => item.id === groupId);
+  const loadRemoteGroup = () => {
+    if (!groupId || storeGroup) return;
+    setGroupLoading(true);
+    setGroupError(null);
+    void getGroup(groupId)
+      .then((response) => setRemoteGroup({ id: response.id, name: response.name, venueId: response.venueId, creatorId: response.creatorId, members: response.members?.map((member) => member.userId) ?? [] }))
+      .catch((error: unknown) => setGroupError(error instanceof Error ? error.message : "Não foi possível carregar o grupo."))
+      .finally(() => setGroupLoading(false));
+  };
+  useEffect(() => { loadRemoteGroup(); }, [groupId, storeGroup]);
+  const [venue, setVenue] = useState<ApiVenue | null>(null);
+  const [venueLoading, setVenueLoading] = useState(false);
+  const [venueError, setVenueError] = useState<string | null>(null);
+  const groupForVenue = groups.find((item) => item.id === groupId);
+
+  useEffect(() => {
+    if (!groupForVenue?.venueId) {
+      setVenue(null);
+      return;
+    }
+    let cancelled = false;
+    setVenueLoading(true);
+    setVenueError(null);
+    getVenue(groupForVenue.venueId)
+      .then((response) => { if (!cancelled) setVenue(response); })
+      .catch((requestError: unknown) => {
+        if (!cancelled) {
+          setVenue(null);
+          setVenueError(requestError instanceof Error ? requestError.message : "Não foi possível carregar o local.");
+        }
+      })
+      .finally(() => { if (!cancelled) setVenueLoading(false); });
+    return () => { cancelled = true; };
+  }, [groupForVenue?.venueId]);
   const handleBackToGroups = () => {
     router.replace(
       "/(main)/groups",
@@ -133,10 +194,7 @@ export default function GroupDetailsScreen() {
     );
   }
 
-  const group = groups.find(
-    (item) =>
-      item.id === groupId,
-  );
+  const group = groups.find((item) => item.id === groupId) ?? remoteGroup;
 
   if (!group) {
     return (
@@ -199,25 +257,9 @@ export default function GroupDetailsScreen() {
     );
   }
 
-  const venue = venues.find(
-    (item) =>
-      item.id === group.venueId,
-  );
 
-  const groupMembers =
-    group.members
-      .map((memberId) =>
-        users.find(
-          (item) =>
-            item.id === memberId,
-        ),
-      )
-      .filter(
-        (
-          member,
-        ): member is (typeof users)[number] =>
-          member !== undefined,
-      );
+
+  const groupMembers = realMembers.map((member) => member.user).filter((member): member is ApiUser => Boolean(member));
 
   const currentUserIsMember =
     user
@@ -226,11 +268,10 @@ export default function GroupDetailsScreen() {
         )
       : false;
 
-  const groupIsEmpty =
-    group.members.length === 0;
+  const canDeleteGroup =
+    user?.id === group.creatorId;
 
-  const availableFriends =
-    friends.filter((friend) => {
+  const availableFriends = realFriends.filter((friend) => {
       const alreadyMember =
         group.members.includes(
           friend.id,
@@ -323,12 +364,26 @@ export default function GroupDetailsScreen() {
     });
   };
 
-  const handleDeleteGroup = () => {
-    deleteGroup(group.id);
+  const handleDeleteGroup = async () => {
+    if (groupProcessing) {
+      return;
+    }
 
-    router.replace(
-      "/(main)/groups",
-    );
+    setDeleteError(null);
+
+    try {
+      await deleteGroup(group.id);
+
+      router.replace(
+        "/(main)/groups",
+      );
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível excluir o grupo.",
+      );
+    }
   };
 
   return (
@@ -471,8 +526,11 @@ export default function GroupDetailsScreen() {
               Membros
             </Text>
 
-            {groupMembers.length ===
-            0 ? (
+            {membersLoading ? (
+              <Text style={styles.emptyText}>Carregando membros...</Text>
+            ) : membersError ? (
+              <Text style={styles.errorText}>{membersError}</Text>
+            ) : groupMembers.length === 0 ? (
               <Text
                 style={
                   styles.emptyText
@@ -533,14 +591,12 @@ export default function GroupDetailsScreen() {
                         style={[
                           styles.memberStatus,
 
-                          member.status ===
-                          "online"
+                          (presenceStatuses[member.id] ?? member.status) === "ONLINE"
                             ? styles.online
                             : styles.offline,
                         ]}
                       >
-                        {member.status ===
-                        "online"
+                        {(presenceStatuses[member.id] ?? member.status) === "ONLINE"
                           ? "Online"
                           : "Offline"}
                       </Text>
@@ -655,14 +711,12 @@ export default function GroupDetailsScreen() {
                         style={[
                           styles.friendStatus,
 
-                          friend.status ===
-                          "online"
+                          (presenceStatuses[friend.id] ?? friend.status) === "ONLINE"
                             ? styles.online
                             : styles.offline,
                         ]}
                       >
-                        {friend.status ===
-                        "online"
+                        {(presenceStatuses[friend.id] ?? friend.status) === "ONLINE"
                           ? "Online"
                           : "Offline"}
                       </Text>
@@ -766,7 +820,7 @@ export default function GroupDetailsScreen() {
               </Pressable>
             )}
 
-            {groupIsEmpty &&
+            {canDeleteGroup &&
               !confirmDelete && (
                 <Pressable
                   onPress={() =>
@@ -790,7 +844,7 @@ export default function GroupDetailsScreen() {
                 </Pressable>
               )}
 
-            {groupIsEmpty &&
+            {canDeleteGroup &&
               confirmDelete && (
                 <View
                   style={
@@ -814,6 +868,12 @@ export default function GroupDetailsScreen() {
                     será removido desta
                     sessão.
                   </Text>
+
+                  {deleteError && (
+                    <Text style={styles.errorText}>
+                      {deleteError}
+                    </Text>
+                  )}
 
                   <View
                     style={
@@ -845,6 +905,7 @@ export default function GroupDetailsScreen() {
                       onPress={
                         handleDeleteGroup
                       }
+                      disabled={groupProcessing}
                       style={({ pressed }) => [
                         styles.confirmDeleteButton,
                         pressed &&
@@ -856,7 +917,9 @@ export default function GroupDetailsScreen() {
                           styles.confirmDeleteText
                         }
                       >
-                        Excluir
+                        {groupProcessing
+                          ? "Excluindo..."
+                          : "Excluir"}
                       </Text>
                     </Pressable>
                   </View>

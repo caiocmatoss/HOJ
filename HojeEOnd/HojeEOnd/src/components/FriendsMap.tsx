@@ -1,4 +1,10 @@
 import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import {
   Pressable,
   StyleSheet,
   Text,
@@ -7,21 +13,24 @@ import {
 
 import { router } from "expo-router";
 
-import { friends } from "@/data/friends";
-import { locations } from "@/data/locations";
+import { getNearbyFriends } from "@/services/api";
 
 import { useLocationStore } from "@/store/location-store";
+import { usePresenceStore } from "@/store/presence-store";
 
 import {
   calculateDistance,
   formatDistance,
 } from "@/utils/distance";
 
+type NearbyFriend = Awaited<ReturnType<typeof getNearbyFriends>>["friends"][number];
+
 type FriendMarker = {
-  friend: (typeof friends)[number];
+  friend: NearbyFriend,
   distance: number;
   x: number;
   y: number;
+  isOnline: boolean;
 };
 
 const MAP_SIZE = 280;
@@ -31,12 +40,44 @@ const MAP_PADDING = 42;
 const MAX_RADIUS_METERS = 1200;
 
 export function FriendsMap() {
+  const [friends, setFriends] = useState<NearbyFriend[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadFriends = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await getNearbyFriends(10);
+      setFriends(response.friends);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Não foi possível carregar os amigos próximos.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadFriends();
+  }, [loadFriends]);
   const latitude = useLocationStore(
     (state) => state.latitude,
   );
 
   const longitude = useLocationStore(
     (state) => state.longitude,
+  );
+
+  const friendLocations = usePresenceStore(
+    (state) => state.friendLocations,
+  );
+
+  const presenceStatuses = usePresenceStore(
+    (state) => state.statuses,
   );
 
   const hasUserLocation =
@@ -48,6 +89,9 @@ export function FriendsMap() {
       latitude,
       longitude,
       hasUserLocation,
+      friendLocations,
+      presenceStatuses,
+      friends,
     );
 
   return (
@@ -139,7 +183,23 @@ export function FriendsMap() {
             ),
           )}
 
-        {!hasUserLocation && (
+        {loading && (
+          <View style={styles.emptyMapState}>
+            <Text style={styles.emptyMapTitle}>Carregando amigos próximos...</Text>
+          </View>
+        )}
+
+        {error && !loading && ( 
+          <View style={styles.emptyMapState}>
+            <Text style={styles.emptyMapTitle}>Não foi possível carregar</Text>
+            <Text style={styles.emptyMapText}>{error}</Text>
+            <Pressable onPress={() => { void loadFriends(); }} style={styles.retryButton}>
+              <Text style={styles.retryText}>Tentar novamente</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {!hasUserLocation && !loading && !error && (
           <View
             style={styles.emptyMapState}
           >
@@ -210,7 +270,7 @@ export function FriendsMap() {
       {!hasUserLocation && (
         <Text style={styles.warning}>
           A localização é necessária para
-          calcular a distância dos seus amigos.
+          calcular a distÃ¢ncia dos seus amigos.
         </Text>
       )}
     </View>
@@ -223,7 +283,7 @@ function FriendMarkerView({
   marker: FriendMarker;
 }) {
   const isOnline =
-    marker.friend.status === "online";
+    marker.isOnline;
 
   return (
     <Pressable
@@ -289,63 +349,33 @@ function buildFriendMarkers(
   userLatitude: number | null,
   userLongitude: number | null,
   hasUserLocation: boolean,
+  friendLocations: Record<string, { userId: string; latitude: number; longitude: number; updatedAt: string }>,
+  presenceStatuses: Record<string, "ONLINE" | "OFFLINE">,
+  friends: NearbyFriend[],
 ): FriendMarker[] {
-  if (
-    !hasUserLocation ||
-    userLatitude === null ||
-    userLongitude === null
-  ) {
+  if (!hasUserLocation || userLatitude === null || userLongitude === null) {
     return [];
   }
 
-  const markers =
-    friends
-      .map((friend) => {
-        const location =
-          locations.find(
-            (item) =>
-              item.userId ===
-              friend.id,
-          );
+  const markers = friends
+    .map((friend) => {
+      const realtime = friendLocations[friend.id];
+      const friendLatitude = realtime?.latitude ?? friend.latitude;
+      const friendLongitude = realtime?.longitude ?? friend.longitude;
+      const distance = realtime
+        ? calculateDistance(userLatitude, userLongitude, friendLatitude, friendLongitude)
+        : friend.distanceMeters;
+      const position = calculateRelativePosition(userLatitude, userLongitude, friendLatitude, friendLongitude, distance);
+      return {
+        friend,
+        distance,
+        x: position.x,
+        y: position.y,
+        isOnline: (presenceStatuses[friend.id] ?? friend.status) === "ONLINE",
+      };
+    });
 
-        if (!location) {
-          return null;
-        }
-
-        const distance =
-          calculateDistance(
-            userLatitude,
-            userLongitude,
-            location.latitude,
-            location.longitude,
-          );
-
-        const position =
-          calculateRelativePosition(
-            userLatitude,
-            userLongitude,
-            location.latitude,
-            location.longitude,
-            distance,
-          );
-
-        return {
-          friend,
-          distance,
-          x: position.x,
-          y: position.y,
-        };
-      })
-      .filter(
-        (
-          item,
-        ): item is FriendMarker =>
-          item !== null,
-      );
-
-  return resolveOverlappingMarkers(
-    markers,
-  );
+  return resolveOverlappingMarkers(markers);
 }
 
 function calculateRelativePosition(
@@ -835,6 +865,19 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: "center",
     marginTop: 10,
+  },
+
+  retryButton: {
+    marginTop: 10,
+    backgroundColor: "#FFC400",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  retryText: {
+    color: "#000000",
+    fontSize: 11,
+    fontWeight: "800",
   },
 
   pressed: {

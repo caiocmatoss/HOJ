@@ -1,9 +1,11 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
 
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
   ScrollView,
@@ -13,6 +15,7 @@ import {
 } from "react-native";
 
 import { CategoryChip } from "@/components/home/CategoryChip";
+import { BACKEND_URL } from "@/config/backend";
 import { EventCard } from "@/components/home/EventCard";
 import { SearchBar } from "@/components/home/SearchBar";
 import { VenueCard } from "@/components/home/VenueCard";
@@ -20,11 +23,18 @@ import { VenueCard } from "@/components/home/VenueCard";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
 import {
-  events,
-  type Event,
-} from "@/data/events";
+  ApiEvent,
+  ApiVenue,
+  getEvents,
+  getVenues,
+} from "@/services/api";
 
-import { venues } from "@/data/venues";
+import { useLocationStore } from "@/store/location-store";
+
+import {
+  calculateDistance,
+  formatDistance,
+} from "@/utils/distance";
 
 type SortOption =
   | "nearest"
@@ -33,16 +43,19 @@ type SortOption =
 
 const categories = [
   "Todos",
+  "Bar",
+  "Festa",
+  "Música",
+  "Festival",
+  "Show",
+  "Gastronomia",
+  "Cinema",
+  "Comida",
   "Bares",
   "Baladas",
   "Shows",
   "Festivais",
   "Restaurantes",
-  "Música",
-  "Gastronomia",
-  "Festa",
-  "Festival",
-  "Cinema",
 ];
 
 const sortOptions: {
@@ -53,12 +66,10 @@ const sortOptions: {
     value: "nearest",
     label: "Mais próximos",
   },
-
   {
     value: "popular",
     label: "Mais populares",
   },
-
   {
     value: "recent",
     label: "Mais recentes",
@@ -66,66 +77,356 @@ const sortOptions: {
 ];
 
 export default function ExploreScreen() {
-  const [
-    searchQuery,
-    setSearchQuery,
-  ] = useState("");
+  const [searchQuery, setSearchQuery] =
+    useState("");
 
-  const [
-    selectedCategory,
-    setSelectedCategory,
-  ] = useState("Todos");
+  const [selectedCategory, setSelectedCategory] =
+    useState("Todos");
 
-  const [
-    sortBy,
-    setSortBy,
-  ] = useState<SortOption>(
-    "nearest",
-  );
+  const [sortBy, setSortBy] =
+    useState<SortOption>("nearest");
 
-  const [
-    showFilters,
-    setShowFilters,
-  ] = useState(true);
+  const [showFilters, setShowFilters] =
+    useState(true);
+
+  const [venues, setVenues] =
+    useState<ApiVenue[]>([]);
+
+  const [events, setEvents] =
+    useState<ApiEvent[]>([]);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const latitude =
+    useLocationStore(
+      (state) => state.latitude,
+    );
+
+  const longitude =
+    useLocationStore(
+      (state) => state.longitude,
+    );
+
+  const hasUserLocation =
+    latitude !== null &&
+    longitude !== null;
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCatalog =
+      async () => {
+        try {
+          setIsLoading(true);
+          setError(null);
+
+          const [
+            venuesResponse,
+            eventsResponse,
+          ] = await Promise.all([
+            getVenues(),
+            getEvents(),
+          ]);
+
+          if (!mounted) {
+            return;
+          }
+
+          setVenues(
+            Array.isArray(
+              venuesResponse,
+            )
+              ? venuesResponse
+              : [],
+          );
+
+          setEvents(
+            Array.isArray(
+              eventsResponse,
+            )
+              ? eventsResponse
+              : [],
+          );
+        } catch (requestError) {
+          if (!mounted) {
+            return;
+          }
+
+          const message =
+            requestError instanceof Error
+              ? requestError.message
+              : "Não foi possível carregar os locais e eventos.";
+
+          setError(message);
+          setVenues([]);
+          setEvents([]);
+        } finally {
+          if (mounted) {
+            setIsLoading(false);
+          }
+        }
+      };
+
+    void loadCatalog();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const normalizedQuery =
     searchQuery
       .trim()
       .toLowerCase();
 
+  const venuesWithDistance =
+    useMemo(() => {
+      return venues.map(
+        (venue) => {
+          const venueLatitude =
+            Number(venue.latitude);
+
+          const venueLongitude =
+            Number(venue.longitude);
+
+          if (
+            !hasUserLocation ||
+            !Number.isFinite(
+              venueLatitude,
+            ) ||
+            !Number.isFinite(
+              venueLongitude,
+            )
+          ) {
+            return {
+              ...venue,
+              calculatedDistance:
+                null as number | null,
+              displayDistance:
+                venue.distance &&
+                venue.distance.length > 0
+                  ? venue.distance
+                  : "Distância indisponível",
+            };
+          }
+
+          const distance =
+            calculateDistance(
+              latitude,
+              longitude,
+              venueLatitude,
+              venueLongitude,
+            );
+
+          return {
+            ...venue,
+            calculatedDistance:
+              distance,
+            displayDistance:
+              formatDistance(
+                distance,
+              ),
+          };
+        },
+      );
+    }, [
+      venues,
+      hasUserLocation,
+      latitude,
+      longitude,
+    ]);
+
+  const matchesCategory =
+    (
+      itemCategory: string,
+    ) => {
+      if (
+        selectedCategory ===
+        "Todos"
+      ) {
+        return true;
+      }
+
+      const normalizedItem =
+        normalizeText(
+          itemCategory,
+        );
+
+      const normalizedSelected =
+        normalizeText(
+          selectedCategory,
+        );
+
+      if (
+        normalizedItem ===
+        normalizedSelected
+      ) {
+        return true;
+      }
+
+      const aliases: Record<
+        string,
+        string[]
+      > = {
+        bar: [
+          "bar",
+          "bares",
+        ],
+
+        bares: [
+          "bar",
+          "bares",
+        ],
+
+        show: [
+          "show",
+          "shows",
+        ],
+
+        shows: [
+          "show",
+          "shows",
+        ],
+
+        festival: [
+          "festival",
+          "festivais",
+        ],
+
+        festivais: [
+          "festival",
+          "festivais",
+        ],
+
+        restaurante: [
+          "restaurante",
+          "restaurantes",
+        ],
+
+        restaurantes: [
+          "restaurante",
+          "restaurantes",
+        ],
+      };
+
+      const allowed =
+        aliases[
+          normalizedSelected
+        ];
+
+      if (!allowed) {
+        return false;
+      }
+
+      return allowed.includes(
+        normalizedItem,
+      );
+    };
+
+  const filteredVenues =
+    useMemo(() => {
+      const filtered =
+        venuesWithDistance.filter(
+          (venue) => {
+            const name =
+              normalizeText(
+                venue.name,
+              );
+
+            const category =
+              normalizeText(
+                venue.category,
+              );
+
+            const address =
+              normalizeText(
+                venue.address,
+              );
+
+            const matchesSearch =
+              normalizedQuery.length ===
+                0 ||
+              name.includes(
+                normalizedQuery,
+              ) ||
+              category.includes(
+                normalizedQuery,
+              ) ||
+              address.includes(
+                normalizedQuery,
+              );
+
+            return (
+              matchesSearch &&
+              matchesCategory(
+                venue.category,
+              )
+            );
+          },
+        );
+
+      return [
+        ...filtered,
+      ].sort(
+        (a, b) =>
+          compareVenues(
+            a,
+            b,
+            sortBy,
+          ),
+      );
+    }, [
+      venuesWithDistance,
+      normalizedQuery,
+      selectedCategory,
+      sortBy,
+    ]);
+
   const filteredEvents =
     useMemo(() => {
       const filtered =
         events.filter(
           (event) => {
+            const title =
+              normalizeText(
+                event.title,
+              );
+
+            const venueName =
+              normalizeText(
+                event.venueName ??
+                  event.venue
+                    ?.name ??
+                  "",
+              );
+
+            const category =
+              normalizeText(
+                event.category,
+              );
+
             const matchesSearch =
               normalizedQuery.length ===
                 0 ||
-              event.title
-                .toLowerCase()
-                .includes(
-                  normalizedQuery,
-                ) ||
-              event.venueName
-                .toLowerCase()
-                .includes(
-                  normalizedQuery,
-                ) ||
-              event.category
-                .toLowerCase()
-                .includes(
-                  normalizedQuery,
-                );
-
-            const matchesCategory =
-              selectedCategory ===
-                "Todos" ||
-              event.category ===
-                selectedCategory;
+              title.includes(
+                normalizedQuery,
+              ) ||
+              venueName.includes(
+                normalizedQuery,
+              ) ||
+              category.includes(
+                normalizedQuery,
+              );
 
             return (
               matchesSearch &&
-              matchesCategory
+              matchesCategory(
+                event.category,
+              )
             );
           },
         );
@@ -141,65 +442,7 @@ export default function ExploreScreen() {
           ),
       );
     }, [
-      normalizedQuery,
-      selectedCategory,
-      sortBy,
-    ]);
-
-  const filteredVenues =
-    useMemo(() => {
-      const filtered =
-        venues.filter(
-          (venue) => {
-            const matchesSearch =
-              normalizedQuery.length ===
-                0 ||
-              venue.name
-                .toLowerCase()
-                .includes(
-                  normalizedQuery,
-                ) ||
-              venue.category
-                .toLowerCase()
-                .includes(
-                  normalizedQuery,
-                );
-
-            const matchesCategory =
-              selectedCategory ===
-                "Todos" ||
-              venue.category ===
-                selectedCategory;
-
-            return (
-              matchesSearch &&
-              matchesCategory
-            );
-          },
-        );
-
-      return [
-        ...filtered,
-      ].sort((a, b) => {
-        if (
-          sortBy === "popular"
-        ) {
-          return (
-            b.occupancy -
-            a.occupancy
-          );
-        }
-
-        return (
-          parseDistance(
-            a.distance,
-          ) -
-          parseDistance(
-            b.distance,
-          )
-        );
-      });
-    }, [
+      events,
       normalizedQuery,
       selectedCategory,
       sortBy,
@@ -211,14 +454,10 @@ export default function ExploreScreen() {
 
   const clearFilters = () => {
     setSearchQuery("");
-
     setSelectedCategory(
       "Todos",
     );
-
-    setSortBy(
-      "nearest",
-    );
+    setSortBy("nearest");
   };
 
   return (
@@ -240,7 +479,9 @@ export default function ExploreScreen() {
                 title={item.title}
                 image={item.image}
                 venueName={
-                  item.venueName
+                  item.venueName ??
+                  item.venue?.name ??
+                  "Local"
                 }
                 time={item.time}
                 category={
@@ -299,7 +540,6 @@ export default function ExploreScreen() {
                   pressed,
                 }) => [
                   styles.filterButton,
-
                   pressed &&
                     styles.pressed,
                 ]}
@@ -424,122 +664,186 @@ export default function ExploreScreen() {
                 </>
               )}
 
-              {!hasResults && (
+              {isLoading && (
                 <View
                   style={
-                    styles.emptyContainer
+                    styles.loadingContainer
                   }
                 >
-                  <Text
-                    style={
-                      styles.emptyTitle
-                    }
-                  >
-                    Nada encontrado
-                  </Text>
+                  <ActivityIndicator
+                    size="large"
+                    color="#FFC400"
+                  />
 
                   <Text
                     style={
-                      styles.emptyText
+                      styles.loadingText
                     }
                   >
-                    Tente outra busca ou
-                    escolha outra
-                    categoria.
+                    Carregando locais e
+                    eventos...
                   </Text>
+                </View>
+              )}
 
-                  <Pressable
-                    style={({
-                      pressed,
-                    }) => [
-                      styles.clearButton,
-
-                      pressed &&
-                        styles.pressed,
-                    ]}
-                    onPress={
-                      clearFilters
+              {!isLoading &&
+                error && (
+                  <View
+                    style={
+                      styles.errorContainer
                     }
                   >
                     <Text
                       style={
-                        styles.clearButtonText
+                        styles.errorTitle
                       }
                     >
-                      Limpar filtros
+                      Não foi possível
+                      carregar
                     </Text>
-                  </Pressable>
-                </View>
-              )}
 
-              {filteredVenues.length >
-                0 && (
-                <View
-                  style={
-                    styles.venuesSection
-                  }
-                >
+                    <Text
+                      style={
+                        styles.errorText
+                      }
+                    >
+                      {error}
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.errorHint
+                      }
+                    >
+                      Verifique se o
+                      backend está
+                      rodando em
+                      {BACKEND_URL}.
+                    </Text>
+                  </View>
+                )}
+
+              {!isLoading &&
+                !error &&
+                !hasResults && (
+                  <View
+                    style={
+                      styles.emptyContainer
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.emptyTitle
+                      }
+                    >
+                      Nada encontrado
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.emptyText
+                      }
+                    >
+                      Tente outra busca
+                      ou escolha outra
+                      categoria.
+                    </Text>
+
+                    <Pressable
+                      style={({
+                        pressed,
+                      }) => [
+                        styles.clearButton,
+                        pressed &&
+                          styles.pressed,
+                      ]}
+                      onPress={
+                        clearFilters
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.clearButtonText
+                        }
+                      >
+                        Limpar filtros
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+              {!isLoading &&
+                !error &&
+                filteredVenues.length >
+                  0 && (
+                  <View
+                    style={
+                      styles.venuesSection
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.sectionTitle
+                      }
+                    >
+                      Locais
+                    </Text>
+
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={
+                        false
+                      }
+                      contentContainerStyle={
+                        styles.horizontalContent
+                      }
+                    >
+                      {filteredVenues.map(
+                        (venue) => (
+                          <VenueCard
+                            key={
+                              venue.id
+                            }
+                            id={
+                              venue.id
+                            }
+                            name={
+                              venue.name
+                            }
+                            category={
+                              venue.category
+                            }
+                            distance={
+                              venue.displayDistance
+                            }
+                            occupancy={
+                              venue.occupancy
+                            }
+                            status={
+                              venue.status
+                            }
+                            image={
+                              venue.image
+                            }
+                          />
+                        ),
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
+
+              {!isLoading &&
+                !error &&
+                filteredEvents.length >
+                  0 && (
                   <Text
                     style={
                       styles.sectionTitle
                     }
                   >
-                    Locais
+                    Eventos
                   </Text>
-
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={
-                      false
-                    }
-                    contentContainerStyle={
-                      styles.horizontalContent
-                    }
-                  >
-                    {filteredVenues.map(
-                      (venue) => (
-                        <VenueCard
-                          key={
-                            venue.id
-                          }
-                          id={
-                            venue.id
-                          }
-                          name={
-                            venue.name
-                          }
-                          category={
-                            venue.category
-                          }
-                          distance={
-                            venue.distance
-                          }
-                          occupancy={
-                            venue.occupancy
-                          }
-                          status={
-                            venue.status
-                          }
-                          image={
-                            venue.image
-                          }
-                        />
-                      ),
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-
-              {filteredEvents.length >
-                0 && (
-                <Text
-                  style={
-                    styles.sectionTitle
-                  }
-                >
-                  Eventos
-                </Text>
-              )}
+                )}
             </View>
           </ScreenContainer>
         }
@@ -549,21 +853,11 @@ export default function ExploreScreen() {
 }
 
 function compareEvents(
-  a: Event,
-  b: Event,
+  a: ApiEvent,
+  b: ApiEvent,
   sortBy: SortOption,
 ) {
   switch (sortBy) {
-    case "nearest":
-      return (
-        parseDistance(
-          a.distance,
-        ) -
-        parseDistance(
-          b.distance,
-        )
-      );
-
     case "popular":
       return (
         b.attendees -
@@ -576,13 +870,163 @@ function compareEvents(
         getEventDateTime(a)
       );
 
+    case "nearest": {
+      const distanceA =
+        getEventDistance(a);
+
+      const distanceB =
+        getEventDistance(b);
+
+      if (
+        distanceA === null &&
+        distanceB === null
+      ) {
+        return 0;
+      }
+
+      if (
+        distanceA === null
+      ) {
+        return 1;
+      }
+
+      if (
+        distanceB === null
+      ) {
+        return -1;
+      }
+
+      return (
+        distanceA - distanceB
+      );
+    }
+
     default:
       return 0;
   }
 }
 
+function compareVenues(
+  a: ApiVenue & {
+    calculatedDistance:
+      | number
+      | null;
+  },
+  b: ApiVenue & {
+    calculatedDistance:
+      | number
+      | null;
+  },
+  sortBy: SortOption,
+) {
+  switch (sortBy) {
+    case "popular":
+      return (
+        b.occupancy -
+        a.occupancy
+      );
+
+    case "recent":
+      return (
+        getTimestamp(
+          b.createdAt,
+        ) -
+        getTimestamp(
+          a.createdAt,
+        )
+      );
+
+    case "nearest": {
+      if (
+        a.calculatedDistance ===
+          null &&
+        b.calculatedDistance ===
+          null
+      ) {
+        return 0;
+      }
+
+      if (
+        a.calculatedDistance ===
+        null
+      ) {
+        return 1;
+      }
+
+      if (
+        b.calculatedDistance ===
+        null
+      ) {
+        return -1;
+      }
+
+      return (
+        a.calculatedDistance -
+        b.calculatedDistance
+      );
+    }
+
+    default:
+      return 0;
+  }
+}
+
+function getEventDistance(
+  event: ApiEvent,
+) {
+  const latitude =
+    useLocationStore.getState()
+      .latitude;
+
+  const longitude =
+    useLocationStore.getState()
+      .longitude;
+
+  if (
+    latitude === null ||
+    longitude === null
+  ) {
+    return null;
+  }
+
+  const venue =
+    event.venue;
+
+  if (!venue) {
+    return null;
+  }
+
+  const venueLatitude =
+    Number(
+      venue.latitude,
+    );
+
+  const venueLongitude =
+    Number(
+      venue.longitude,
+    );
+
+  if (
+    !Number.isFinite(
+      venueLatitude,
+    ) ||
+    !Number.isFinite(
+      venueLongitude,
+    )
+  ) {
+    return null;
+  }
+
+  return calculateDistance(
+    latitude,
+    longitude,
+    venueLatitude,
+    venueLongitude,
+  );
+}
+
 function getEventDateTime(
-  event: Event,
+  event: ApiEvent,
 ) {
   const value =
     new Date(
@@ -596,22 +1040,34 @@ function getEventDateTime(
     : 0;
 }
 
-function parseDistance(
-  distance: string,
+function getTimestamp(
+  value?: string,
 ) {
-  const value =
-    Number.parseFloat(
-      distance.replace(
-        ",",
-        ".",
-      ),
-    );
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp =
+    new Date(value).getTime();
 
   return Number.isFinite(
-    value,
+    timestamp,
   )
-    ? value
-    : Number.POSITIVE_INFINITY;
+    ? timestamp
+    : 0;
+}
+
+function normalizeText(
+  value: string,
+) {
+  return value
+    .normalize("NFD")
+    .replace(
+      /[\u0300-\u036f]/g,
+      "",
+    )
+    .toLowerCase()
+    .trim();
 }
 
 const styles = StyleSheet.create({
@@ -703,6 +1159,51 @@ const styles = StyleSheet.create({
 
   venuesSection: {
     marginBottom: 8,
+  },
+
+  loadingContainer: {
+    backgroundColor: "#151515",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#292929",
+    padding: 24,
+    marginTop: 24,
+    alignItems: "center",
+  },
+
+  loadingText: {
+    color: "#AAAAAA",
+    fontSize: 14,
+    marginTop: 12,
+  },
+
+  errorContainer: {
+    backgroundColor: "#241515",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#5A2525",
+    padding: 20,
+    marginTop: 24,
+  },
+
+  errorTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  errorText: {
+    color: "#FF8A8A",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+
+  errorHint: {
+    color: "#999999",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
   },
 
   emptyContainer: {

@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
+
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -14,7 +17,10 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
-import { friends } from "@/data/friends";
+import {
+  getFriends,
+  type ApiFriend,
+} from "@/services/api";
 
 import { usePresenceStore } from "@/store/presence-store";
 
@@ -29,15 +35,78 @@ export default function FriendProfileScreen() {
       ? id[0]
       : id;
 
-  const friend = friends.find(
-    (item) =>
-      item.id === friendId,
-  );
+  const [
+    friend,
+    setFriend,
+  ] = useState<ApiFriend | null>(null);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(null);
+
+  const presenceStatuses =
+    usePresenceStore(
+      (state) => state.statuses,
+    );
 
   const visible =
     usePresenceStore(
       (state) => state.visible,
     );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFriend = async () => {
+      setLoading(true);
+      setError(null);
+      setFriend(null);
+
+      if (!friendId) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const result = await getFriends();
+        const resultFriend = result.find(
+          (item) => item.id === friendId,
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setFriend(resultFriend ?? null);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Nao foi possivel carregar este amigo.",
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadFriend();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [friendId]);
 
   const handleBackToFriends = () => {
     router.replace(
@@ -45,7 +114,28 @@ export default function FriendProfileScreen() {
     );
   };
 
-  if (!friend) {
+  if (loading) {
+    return (
+      <View style={styles.errorScreen}>
+        <ScreenContainer
+          maxWidth={760}
+        >
+          <View
+            style={
+              styles.errorContainer
+            }
+          >
+            <ActivityIndicator
+              size="large"
+              color="#FFC400"
+            />
+          </View>
+        </ScreenContainer>
+      </View>
+    );
+  }
+
+  if (error || !friend) {
     return (
       <View style={styles.errorScreen}>
         <ScreenContainer
@@ -69,7 +159,9 @@ export default function FriendProfileScreen() {
                 styles.errorTitle
               }
             >
-              Amigo não encontrado
+              {error
+                ? "Erro ao carregar amigo"
+                : "Amigo não encontrado"}
             </Text>
 
             <Text
@@ -77,8 +169,8 @@ export default function FriendProfileScreen() {
                 styles.errorText
               }
             >
-              Não foi possível encontrar
-              este amigo.
+              {error ??
+                "Não foi possível encontrar este amigo."}
             </Text>
 
             <Pressable
@@ -109,7 +201,7 @@ export default function FriendProfileScreen() {
   }
 
   const isOnline =
-    friend.status === "online";
+    (presenceStatuses[friend.id] ?? friend.status) === "ONLINE";
 
   const handleOpenChat = () => {
     router.push({
@@ -168,7 +260,9 @@ export default function FriendProfileScreen() {
             >
               <Image
                 source={{
-                  uri: friend.avatar,
+                  uri:
+                    friend.avatar ??
+                    "https://i.pravatar.cc/150?img=12",
                 }}
                 style={styles.avatar}
               />

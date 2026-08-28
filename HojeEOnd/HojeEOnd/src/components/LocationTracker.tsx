@@ -1,6 +1,10 @@
-import { useEffect } from "react";
+﻿import { useEffect } from "react";
 
 import * as Location from "expo-location";
+
+import {
+  updateSocketLocation,
+} from "@/services/socket";
 
 import { useLocationStore } from "@/store/location-store";
 import { usePresenceStore } from "@/store/presence-store";
@@ -43,6 +47,84 @@ export default function LocationTracker() {
       | Location.LocationSubscription
       | null = null;
 
+    let lastSentLatitude:
+      | number
+      | null = null;
+
+    let lastSentLongitude:
+      | number
+      | null = null;
+
+    async function sendLocationToSocket(
+      latitude: number,
+      longitude: number,
+    ) {
+      try {
+        if (!mounted) {
+          return;
+        }
+
+        /*
+         * Evita enviar exatamente a mesma posição
+         * repetidamente para o backend.
+         */
+        if (
+          lastSentLatitude ===
+            latitude &&
+          lastSentLongitude ===
+            longitude
+        ) {
+          return;
+        }
+
+        const result =
+          await updateSocketLocation(
+            latitude,
+            longitude,
+          );
+
+        if (!mounted) {
+          return;
+        }
+
+        lastSentLatitude =
+          latitude;
+
+        lastSentLongitude =
+          longitude;
+
+        console.log(
+          "[LocationTracker] localização enviada:",
+          {
+            latitude:
+              result.latitude,
+            longitude:
+              result.longitude,
+            nearbyFriends:
+              result.nearbyFriends,
+          },
+        );
+      } catch (
+        error: unknown
+      ) {
+        /*
+         * Falha no Socket não interrompe
+         * o rastreamento local do GPS.
+         *
+         * A posição continua disponível
+         * no location-store.
+         */
+        if (!mounted) {
+          return;
+        }
+
+        console.warn(
+          "[LocationTracker] não foi possível enviar localização pelo Socket:",
+          error,
+        );
+      }
+    }
+
     function updateStores(
       latitude: number,
       longitude: number,
@@ -57,6 +139,11 @@ export default function LocationTracker() {
       );
 
       updatePosition(
+        latitude,
+        longitude,
+      );
+
+      void sendLocationToSocket(
         latitude,
         longitude,
       );
@@ -215,7 +302,9 @@ export default function LocationTracker() {
         }
 
         setTracking(true);
-      } catch (error) {
+      } catch (
+        error: unknown
+      ) {
         if (!mounted) {
           return;
         }

@@ -1,4 +1,10 @@
 import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -12,106 +18,170 @@ import {
   useLocalSearchParams,
 } from "expo-router";
 
-import { ScreenContainer } from "@/components/ui/ScreenContainer";
+import {
+  ApiVenue,
+  getVenue,
+} from "@/services/api";
 
-import { venues } from "@/data/venues";
+import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
 import { useCheckinStore } from "@/store/checkin-store";
 import { useFavoriteStore } from "@/store/favorite-store";
 
 export default function VenueDetailsScreen() {
-  const { id } =
+  const params =
     useLocalSearchParams<{
       id?: string | string[];
     }>();
 
-  const favorites =
-  useFavoriteStore(
-    (state) =>
-      state.favorites,
-  );
+  const venueId =
+    Array.isArray(params.id)
+      ? params.id[0]
+      : params.id;
 
-const toggleFavorite =
-  useFavoriteStore(
-    (state) =>
-      state.toggleFavorite,
-  );
+  const [
+    venue,
+    setVenue,
+  ] = useState<ApiVenue | null>(null);
+
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true);
+
+  const [favoriteActionError, setFavoriteActionError] = useState<string | null>(null);
+
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(null);
+
+  const favorites = useFavoriteStore((state) => state.favorites);
+  const toggleFavorite = useFavoriteStore((state) => state.toggleFavorite);
+  const loadFavorites = useFavoriteStore((state) => state.loadFavorites);
+  const isFavoriteProcessing = useFavoriteStore((state) => state.isProcessing);
 
   const {
     currentVenue,
     checkin,
     checkout,
+    loadCurrentCheckin,
+    processing: checkinProcessing,
+    error: checkinError,
   } = useCheckinStore();
 
-  const venueId =
-    Array.isArray(id)
-      ? id[0]
-      : id;
+  useEffect(() => {
+    void loadFavorites();
+  }, [loadFavorites]);
+
+  useEffect(() => {
+    void loadCurrentCheckin();
+  }, [loadCurrentCheckin]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadVenue =
+      async () => {
+        if (!venueId) {
+          if (mounted) {
+            setError(
+              "Local inválido.",
+            );
+
+            setIsLoading(false);
+          }
+
+          return;
+        }
+
+        try {
+          setIsLoading(true);
+          setError(null);
+
+          const response =
+            await getVenue(
+              venueId,
+            );
+
+          if (!mounted) {
+            return;
+          }
+
+          setVenue(response);
+        } catch (requestError) {
+          if (!mounted) {
+            return;
+          }
+
+          const message =
+            requestError instanceof Error
+              ? requestError.message
+              : "Não foi possível carregar o local.";
+
+          setError(message);
+          setVenue(null);
+        } finally {
+          if (mounted) {
+            setIsLoading(false);
+          }
+        }
+      };
+
+    void loadVenue();
+
+    return () => {
+      mounted = false;
+    };
+  }, [venueId]);
 
   const handleBack = () => {
     router.back();
   };
 
-  if (!venueId) {
+  if (isLoading) {
     return (
-      <View style={styles.errorScreen}>
-        <ScreenContainer maxWidth={760}>
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorIcon}>
-              📍
-            </Text>
+      <View style={styles.center}>
+        <ActivityIndicator
+          size="large"
+          color="#FFC400"
+        />
 
-            <Text style={styles.errorTitle}>
-              Local não encontrado
-            </Text>
-
-            <Text style={styles.errorText}>
-              Não foi possível identificar este local.
-            </Text>
-
-            <Pressable
-              onPress={handleBack}
-              style={({ pressed }) => [
-                styles.errorButton,
-                pressed &&
-                  styles.pressed,
-              ]}
-            >
-              <Text
-                style={
-                  styles.errorButtonText
-                }
-              >
-                Voltar
-              </Text>
-            </Pressable>
-          </View>
-        </ScreenContainer>
+        <Text
+          style={styles.loadingText}
+        >
+          Carregando local...
+        </Text>
       </View>
     );
   }
 
-  const venue = venues.find(
-    (item) =>
-      item.id === venueId,
-  );
-
-  if (!venue) {
+  if (error || !venue) {
     return (
       <View style={styles.errorScreen}>
         <ScreenContainer maxWidth={760}>
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorIcon}>
+          <View
+            style={
+              styles.errorContainer
+            }
+          >
+            <Text
+              style={styles.errorIcon}
+            >
               📍
             </Text>
 
-            <Text style={styles.errorTitle}>
-              Local não encontrado
+            <Text
+              style={styles.errorTitle}
+            >
+              Não foi possível abrir o local
             </Text>
 
-            <Text style={styles.errorText}>
-              Este local pode ter sido removido ou
-              não está mais disponível.
+            <Text
+              style={styles.errorText}
+            >
+              {error ??
+                "Local não encontrado."}
             </Text>
 
             <Pressable
@@ -137,36 +207,51 @@ const toggleFavorite =
   }
 
   const favorite =
-  favorites.includes(
-    venueId,
-  );
+    venueId !== undefined &&
+    favorites.includes(venueId);
 
   const isCurrentlyCheckedIn =
+    venueId !== undefined &&
     currentVenue === venueId;
 
   const isOpen =
-    venue.status === "open";
+    venue.status === "open" ||
+    venue.status === "OPEN";
 
-  const handleFavorite = () => {
-  toggleFavorite(
-    venueId,
-  );
-};
+  const occupancy =
+    Number(venue.occupancy) || 0;
 
-  const handleCheckin = () => {
-    if (
-      isCurrentlyCheckedIn
-    ) {
-      checkout();
+  const rating =
+    venue.rating !== null &&
+    venue.rating !== undefined
+      ? Number(venue.rating)
+      : 0;
 
+  const handleFavorite = async () => {
+    if (!venueId || isFavoriteProcessing(venueId)) {
       return;
     }
 
-    checkin(
-      venueId,
-    );
+    setFavoriteActionError(null);
+    try {
+      await toggleFavorite(venueId);
+    } catch (requestError) {
+      setFavoriteActionError(requestError instanceof Error ? requestError.message : "Não foi possível atualizar o favorito.");
+    }
   };
 
+  const handleCheckin = async () => {
+    if (!venueId || checkinProcessing) return;
+    try {
+      if (isCurrentlyCheckedIn) {
+        await checkout();
+      } else {
+        await checkin(venueId);
+      }
+    } catch {
+      // The store exposes the API error for the UI below.
+    }
+  };
   const handleOpenGroups = () => {
     router.push(
       "/(main)/groups",
@@ -174,331 +259,362 @@ const toggleFavorite =
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={
-        styles.scrollContent
-      }
-      showsVerticalScrollIndicator={
-        false
-      }
-    >
-      <ScreenContainer maxWidth={900}>
-        <View style={styles.content}>
-          <Pressable
-            onPress={handleBack}
-            style={({ pressed }) => [
-              styles.backButtonTop,
-
-              pressed &&
-                styles.pressed,
-            ]}
-          >
-            <Text
-              style={
-                styles.backButtonTopText
-              }
-            >
-              ← Voltar
-            </Text>
-          </Pressable>
-
-          <Image
-            source={{
-              uri: venue.image,
-            }}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
-
-          <View style={styles.headerRow}>
-            <View style={styles.headerInfo}>
-              <Text style={styles.title}>
-                {venue.name}
-              </Text>
-
-              <Text style={styles.category}>
-                {venue.category}
-              </Text>
-
-              <Text style={styles.address}>
-                📍 {venue.address}
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.statusBadge,
-
-                isOpen
-                  ? styles.statusOpen
-                  : styles.statusClosed,
+    <View style={styles.page}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={
+          styles.scrollContent
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
+        <ScreenContainer maxWidth={900}>
+          <View style={styles.content}>
+            <Pressable
+              onPress={handleBack}
+              style={({ pressed }) => [
+                styles.backButtonTop,
+                pressed &&
+                  styles.pressed,
               ]}
             >
               <Text
-                style={[
-                  styles.statusText,
+                style={
+                  styles.backButtonTopText
+                }
+              >
+                ← Voltar
+              </Text>
+            </Pressable>
 
+            {venue.image ? (
+              <Image
+                source={{
+                  uri: venue.image,
+                }}
+                style={
+                  styles.heroImage
+                }
+                resizeMode="cover"
+              />
+            ) : (
+              <View
+                style={
+                  styles.heroFallback
+                }
+              >
+                <Text
+                  style={
+                    styles.heroFallbackText
+                  }
+                >
+                  HOJÉ OND
+                </Text>
+              </View>
+            )}
+
+            <View
+              style={styles.headerRow}
+            >
+              <View
+                style={styles.headerInfo}
+              >
+                <Text
+                  style={styles.title}
+                >
+                  {venue.name}
+                </Text>
+
+                <Text
+                  style={styles.category}
+                >
+                  {venue.category}
+                </Text>
+
+                <Text
+                  style={styles.address}
+                >
+                  📍 {venue.address}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.statusBadge,
                   isOpen
-                    ? styles.statusOpenText
-                    : styles.statusClosedText,
+                    ? styles.statusOpen
+                    : styles.statusClosed,
                 ]}
               >
-                {isOpen
-                  ? "Aberto"
-                  : "Fechado"}
-              </Text>
+                <Text
+                  style={[
+                    styles.statusText,
+                    isOpen
+                      ? styles.statusOpenText
+                      : styles.statusClosedText,
+                  ]}
+                >
+                  {isOpen
+                    ? "Aberto"
+                    : "Fechado"}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          <View style={styles.actionRow}>
-            <Pressable
-              onPress={
-                handleFavorite
-              }
-              style={({ pressed }) => [
-                styles.actionButton,
-
-                favorite &&
-                  styles.favoriteActive,
-
-                pressed &&
-                  styles.pressed,
-              ]}
+            <View
+              style={styles.actionRow}
             >
-              <Text
-                style={[
-                  styles.actionIcon,
+              <Pressable
+                onPress={() => { void handleFavorite(); }}
+                disabled={venueId ? isFavoriteProcessing(venueId) : false}
+                style={({ pressed }) => [
+                  styles.actionButton,
 
                   favorite &&
-                    styles.favoriteIconActive,
+                    styles.favoriteActive,
+
+                  pressed &&
+                    styles.pressed,
                 ]}
               >
-                {favorite
-                  ? "♥"
-                  : "♡"}
-              </Text>
+                <Text
+                  style={[
+                    styles.actionIcon,
+                    favorite &&
+                      styles.favoriteIconActive,
+                  ]}
+                >
+                  {favorite
+                    ? "♥"
+                    : "♡"}
+                </Text>
 
-              <Text
-                style={[
-                  styles.actionText,
+                <Text
+                  style={[
+                    styles.actionText,
+                    favorite &&
+                      styles.favoriteTextActive,
+                  ]}
+                >
+                  {favorite
+                    ? "Favoritado"
+                    : "Favoritar"}
+                </Text>
+              </Pressable>
 
-                  favorite &&
-                    styles.favoriteTextActive,
-                ]}
-              >
-                {favorite
-                  ? "Favoritado"
-                  : "Favoritar"}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={
-                handleCheckin
-              }
-              style={({ pressed }) => [
-                styles.actionButton,
-
-                isCurrentlyCheckedIn &&
-                  styles.checkinActive,
-
-                pressed &&
-                  styles.pressed,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.actionIcon,
+              <Pressable
+                onPress={() => { void handleCheckin(); }}
+                disabled={checkinProcessing}
+                style={({ pressed }) => [
+                  styles.actionButton,
 
                   isCurrentlyCheckedIn &&
-                    styles.checkinIconActive,
+                    styles.checkinActive,
+
+                  pressed &&
+                    styles.pressed,
                 ]}
               >
-                {isCurrentlyCheckedIn
-                  ? "✓"
-                  : "📍"}
-              </Text>
+                <Text
+                  style={[
+                    styles.actionIcon,
+                    isCurrentlyCheckedIn &&
+                      styles.checkinIconActive,
+                  ]}
+                >
+                  {isCurrentlyCheckedIn
+                    ? "✓"
+                    : "📍"}
+                </Text>
 
-              <Text
-                style={[
-                  styles.actionText,
+                <Text
+                  style={[
+                    styles.actionText,
+                    isCurrentlyCheckedIn &&
+                      styles.checkinTextActive,
+                  ]}
+                >
+                  {isCurrentlyCheckedIn
+                    ? "Você está aqui"
+                    : "Check-in"}
+                </Text>
+              </Pressable>
+            </View>
 
-                  isCurrentlyCheckedIn &&
-                    styles.checkinTextActive,
-                ]}
+            {checkinError && (
+              <Text style={styles.errorText}>{checkinError}</Text>
+            )}
+
+            {favoriteActionError && (
+              <Text style={styles.errorText}>{favoriteActionError}</Text>
+            )}
+
+            {isCurrentlyCheckedIn && (
+              <View
+                style={
+                  styles.checkedInBanner
+                }
               >
-                {isCurrentlyCheckedIn
-                  ? "Você está aqui"
-                  : "Check-in"}
-              </Text>
-            </Pressable>
-          </View>
+                <Text
+                  style={
+                    styles.checkedInBannerText
+                  }
+                >
+                  ✓ Você está fazendo check-in neste
+                  local
+                </Text>
+              </View>
+            )}
 
-          {isCurrentlyCheckedIn && (
             <View
-              style={
-                styles.checkedInBanner
-              }
+              style={styles.statsCard}
+            >
+              <View
+                style={styles.statItem}
+              >
+                <Text
+                  style={
+                    styles.statValue
+                  }
+                >
+                  {occupancy}%
+                </Text>
+
+                <Text
+                  style={
+                    styles.statLabel
+                  }
+                >
+                  Ocupação
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.statDivider
+                }
+              />
+
+              <View
+                style={styles.statItem}
+              >
+                <Text
+                  style={
+                    styles.statValue
+                  }
+                >
+                  {venue.distance ||
+                    "—"}
+                </Text>
+
+                <Text
+                  style={
+                    styles.statLabel
+                  }
+                >
+                  Distância
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.statDivider
+                }
+              />
+
+              <View
+                style={styles.statItem}
+              >
+                <Text
+                  style={
+                    styles.statValue
+                  }
+                >
+                  {venue.people}
+                </Text>
+
+                <Text
+                  style={
+                    styles.statLabel
+                  }
+                >
+                  Pessoas
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={styles.infoCard}
             >
               <Text
                 style={
-                  styles.checkedInBannerText
+                  styles.sectionTitle
                 }
               >
-                ✓ Você está fazendo check-in neste
-                local
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.statsCard}>
-            <View style={styles.statItem}>
-              <Text
-                style={
-                  styles.statValue
-                }
-              >
-                {venue.occupancy}
+                Informações
               </Text>
 
-              <Text
-                style={
-                  styles.statLabel
+              <InfoRow
+                icon="📍"
+                label="Endereço"
+                value={
+                  venue.address ||
+                  "Não informado"
                 }
-              >
-                Ocupação
-              </Text>
+              />
+
+              <InfoRow
+                icon="🚪"
+                label="Status"
+                value={
+                  isOpen
+                    ? "Aberto"
+                    : "Fechado"
+                }
+              />
+
+              <InfoRow
+                icon="🎧"
+                label="DJ"
+                value={
+                  venue.dj ||
+                  "Não informado"
+                }
+              />
+
+              <InfoRow
+                icon="🎵"
+                label="Playlist"
+                value={
+                  venue.playlist ||
+                  "Não informado"
+                }
+              />
+
+              <InfoRow
+                icon="🎟️"
+                label="Promoção"
+                value={
+                  venue.promotion ||
+                  "Nenhuma promoção"
+                }
+              />
+
+              <InfoRow
+                icon="⭐"
+                label="Avaliação"
+                value={
+                  rating > 0
+                    ? rating.toFixed(1)
+                    : "Sem avaliação"
+                }
+              />
             </View>
 
             <View
               style={
-                styles.statDivider
-              }
-            />
-
-            <View style={styles.statItem}>
-              <Text
-                style={
-                  styles.statValue
-                }
-              >
-                {venue.distance}
-              </Text>
-
-              <Text
-                style={
-                  styles.statLabel
-                }
-              >
-                Distância
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.statDivider
-              }
-            />
-
-            <View style={styles.statItem}>
-              <Text
-                style={
-                  styles.statValue
-                }
-              >
-                {venue.people}
-              </Text>
-
-              <Text
-                style={
-                  styles.statLabel
-                }
-              >
-                Pessoas
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoCard}>
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
-              Informações
-            </Text>
-
-            <InfoRow
-              icon="📍"
-              label="Endereço"
-              value={
-                venue.address
-              }
-            />
-
-            <InfoRow
-              icon="🚪"
-              label="Status"
-              value={
-                isOpen
-                  ? "Aberto"
-                  : "Fechado"
-              }
-            />
-
-            <InfoRow
-              icon="🎧"
-              label="DJ"
-              value={
-                venue.dj
-              }
-            />
-
-            <InfoRow
-              icon="🎵"
-              label="Playlist"
-              value={
-                venue.playlist
-              }
-            />
-
-            <InfoRow
-              icon="🎁"
-              label="Promoção"
-              value={
-                venue.promotion
-              }
-            />
-          </View>
-
-          <View
-            style={
-              styles.descriptionCard
-            }
-          >
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
-              Sobre o local
-            </Text>
-
-            <Text
-              style={
-                styles.description
-              }
-            >
-              {venue.description}
-            </Text>
-          </View>
-
-          {venue.gallery.length >
-            0 && (
-            <View
-              style={
-                styles.gallerySection
+                styles.descriptionCard
               }
             >
               <Text
@@ -506,79 +622,104 @@ const toggleFavorite =
                   styles.sectionTitle
                 }
               >
-                Galeria
+                Sobre o local
               </Text>
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={
-                  false
-                }
-                contentContainerStyle={
-                  styles.galleryContent
+              <Text
+                style={
+                  styles.description
                 }
               >
-                {venue.gallery.map(
-                  (
-                    photo,
-                    index,
-                  ) => (
-                    <Image
-                      key={`${venue.id}-${index}`}
-                      source={{
-                        uri: photo,
-                      }}
-                      style={
-                        styles.galleryImage
-                      }
-                      resizeMode="cover"
-                    />
-                  ),
-                )}
-              </ScrollView>
+                {venue.description ||
+                  "Nenhuma descrição disponível."}
+              </Text>
             </View>
-          )}
 
-          <Pressable
-            onPress={
-              handleOpenGroups
-            }
-            style={({ pressed }) => [
-              styles.groupButton,
+            {venue.gallery &&
+              venue.gallery.length >
+                0 && (
+                <View
+                  style={
+                    styles.gallerySection
+                  }
+                >
+                  <Text
+                    style={
+                      styles.sectionTitle
+                    }
+                  >
+                    Galeria
+                  </Text>
 
-              pressed &&
-                styles.pressed,
-            ]}
-          >
-            <Text
-              style={
-                styles.groupButtonText
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={
+                      false
+                    }
+                    contentContainerStyle={
+                      styles.galleryContent
+                    }
+                  >
+                    {venue.gallery.map(
+                      (
+                        photo,
+                        index,
+                      ) => (
+                        <Image
+                          key={`${venue.id}-${index}`}
+                          source={{
+                            uri: photo,
+                          }}
+                          style={
+                            styles.galleryImage
+                          }
+                          resizeMode="cover"
+                        />
+                      ),
+                    )}
+                  </ScrollView>
+                </View>
+              )}
+
+            <Pressable
+              onPress={
+                handleOpenGroups
               }
+              style={({ pressed }) => [
+                styles.groupButton,
+                pressed &&
+                  styles.pressed,
+              ]}
             >
-              🎉 Criar grupo neste local
-            </Text>
-          </Pressable>
+              <Text
+                style={
+                  styles.groupButtonText
+                }
+              >
+                🎉 Criar grupo neste local
+              </Text>
+            </Pressable>
 
-          <Pressable
-            onPress={handleBack}
-            style={({ pressed }) => [
-              styles.backButton,
-
-              pressed &&
-                styles.pressed,
-            ]}
-          >
-            <Text
-              style={
-                styles.backButtonText
-              }
+            <Pressable
+              onPress={handleBack}
+              style={({ pressed }) => [
+                styles.backButton,
+                pressed &&
+                  styles.pressed,
+              ]}
             >
-              Voltar
-            </Text>
-          </Pressable>
-        </View>
-      </ScreenContainer>
-    </ScrollView>
+              <Text
+                style={
+                  styles.backButtonText
+                }
+              >
+                Voltar
+              </Text>
+            </Pressable>
+          </View>
+        </ScreenContainer>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -592,12 +733,14 @@ function InfoRow({
   value: string;
 }) {
   return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoLabel}>
+    <View
+      style={styles.infoRow}
+    >
+      <View
+        style={styles.infoLabel}
+      >
         <Text
-          style={
-            styles.infoIcon
-          }
+          style={styles.infoIcon}
         >
           {icon}
         </Text>
@@ -622,9 +765,13 @@ function InfoRow({
 }
 
 const styles = StyleSheet.create({
-  container: {
+  page: {
     flex: 1,
     backgroundColor: "#090909",
+  },
+
+  container: {
+    flex: 1,
   },
 
   scrollContent: {
@@ -654,6 +801,21 @@ const styles = StyleSheet.create({
     height: 300,
     borderRadius: 20,
     backgroundColor: "#1B1B1B",
+  },
+
+  heroFallback: {
+    width: "100%",
+    height: 300,
+    borderRadius: 20,
+    backgroundColor: "#202020",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  heroFallbackText: {
+    color: "#FFC400",
+    fontSize: 28,
+    fontWeight: "900",
   },
 
   headerRow: {
@@ -934,6 +1096,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  center: {
+    flex: 1,
+    backgroundColor: "#090909",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 30,
+  },
+
+  loadingText: {
+    color: "#AAAAAA",
+    fontSize: 14,
+    marginTop: 12,
+  },
+
   errorScreen: {
     flex: 1,
     backgroundColor: "#090909",
@@ -960,6 +1136,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
     marginTop: 14,
+    textAlignVertical: "center",
   },
 
   errorText: {

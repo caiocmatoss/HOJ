@@ -3,13 +3,20 @@ import {
   Text,
   StyleSheet
 } from "react-native";
+import { useRouter } from "expo-router";
 
 
 export function FloatingButton(){
+  const router = useRouter();
 
   return (
 
-    <Pressable style={styles.button}>
+    <Pressable
+      style={styles.button}
+      onPress={() => router.push("/(main)/group/create")}
+      accessibilityRole="button"
+      accessibilityLabel="Criar grupo"
+    >
 
       <Text style={styles.text}>
         +

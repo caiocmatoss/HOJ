@@ -19,6 +19,8 @@ import {
 import { FeedbackMessage } from "@/components/ui/FeedbackMessage";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 
+import { updateMyUser } from "@/services/api";
+
 import {
   useUserStore,
 } from "@/store/user-store";
@@ -32,43 +34,49 @@ import {
 } from "@/store/presence-store";
 
 export default function EditProfileScreen() {
-  const {
-    user,
-    updateName,
-    updateBio,
-    updateAvatar,
-  } = useUserStore();
+const {
+  user,
+  setUser,
+} = useUserStore();
 
-  const {
-    latitude,
-    longitude,
-  } = useLocationStore();
+const {
+  latitude,
+  longitude,
+} = useLocationStore();
 
-  const {
-    visible,
-    setVisible,
-  } = usePresenceStore();
+const {
+  visible,
+  setVisible,
+} = usePresenceStore();
 
-  const [
-    name,
-    setName,
-  ] = useState(
-    user.name,
+if (!user) {
+  router.replace(
+    "/(auth)/login",
   );
 
-  const [
-    bio,
-    setBio,
-  ] = useState(
-    user.bio,
-  );
+  return null;
+}
 
-  const [
-    avatar,
-    setAvatar,
-  ] = useState(
-    user.avatar,
-  );
+const [
+  name,
+  setName,
+] = useState(
+  user.name ?? "",
+);
+
+const [
+  bio,
+  setBio,
+] = useState(
+  user.bio ?? "",
+);
+
+const [
+  avatar,
+  setAvatar,
+] = useState(
+  user.avatar ?? "",
+);
 
   const [
     saving,
@@ -88,49 +96,51 @@ export default function EditProfileScreen() {
     );
   };
 
-  const handleSave = () => {
-    const trimmedName =
-      name.trim();
+  const handleSave = async () => {
+  const trimmedName =
+    name.trim();
 
-    const trimmedBio =
-      bio.trim();
+  const trimmedBio =
+    bio.trim();
 
-    const trimmedAvatar =
-      avatar.trim();
+  const trimmedAvatar =
+    avatar.trim();
 
-    if (!trimmedName) {
-      setError(
-        "Digite seu nome.",
-      );
-
-      return;
-    }
-
-    setError("");
-    setSaving(true);
-
-    updateName(
-      trimmedName,
+  if (!trimmedName) {
+    setError(
+      "Digite seu nome.",
     );
 
-    updateBio(
-      trimmedBio,
+    return;
+  }
+
+  setError("");
+  setSaving(true);
+
+  try {
+    const updatedUser = await updateMyUser({
+      name: trimmedName,
+      bio: trimmedBio,
+      ...(trimmedAvatar
+        ? { avatar: trimmedAvatar }
+        : {}),
+    });
+
+    setUser(updatedUser);
+    setSaving(false);
+
+    router.replace(
+      "/(main)/profile",
     );
-
-    if (trimmedAvatar) {
-      updateAvatar(
-        trimmedAvatar,
-      );
-    }
-
-    setTimeout(() => {
-      setSaving(false);
-
-      router.replace(
-        "/(main)/profile",
-      );
-    }, 300);
-  };
+  } catch (requestError) {
+    setSaving(false);
+    setError(
+      requestError instanceof Error
+        ? requestError.message
+        : "Não foi possível salvar as alterações.",
+    );
+  }
+};
 
   return (
     <ScrollView

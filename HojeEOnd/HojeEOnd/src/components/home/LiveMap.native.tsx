@@ -1,4 +1,9 @@
 import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
   StyleSheet,
   Text,
   View,
@@ -8,7 +13,11 @@ import MapView, {
   Marker,
 } from "react-native-maps";
 
-import { venues } from "@/data/venues";
+import {
+  ApiVenue,
+  getVenues,
+} from "@/services/api";
+
 import { useLocationStore } from "@/store/location-store";
 
 export function LiveMap() {
@@ -30,6 +39,42 @@ export function LiveMap() {
   const initialLongitude =
     longitude ?? -46.6333;
 
+  const [venues, setVenues] = useState<ApiVenue[]>(
+    [],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadVenues = async () => {
+      try {
+        const response = await getVenues();
+
+        if (!mounted) {
+          return;
+        }
+
+        setVenues(
+          Array.isArray(response)
+            ? response
+            : [],
+        );
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setVenues([]);
+      }
+    };
+
+    void loadVenues();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <View style={styles.container}>
       <MapView
@@ -45,17 +90,41 @@ export function LiveMap() {
         }
         showsMyLocationButton
       >
-        {venues.map((venue) => (
-          <Marker
-            key={venue.id}
-            coordinate={{
-              latitude: venue.latitude,
-              longitude: venue.longitude,
-            }}
-            title={venue.name}
-            description={`${venue.category} • ${venue.distance}`}
-          />
-        ))}
+        {venues.map((venue) => {
+          const venueLatitude =
+            Number(venue.latitude);
+
+          const venueLongitude =
+            Number(venue.longitude);
+
+          if (
+            !Number.isFinite(
+              venueLatitude,
+            ) ||
+            !Number.isFinite(
+              venueLongitude,
+            )
+          ) {
+            return null;
+          }
+
+          return (
+            <Marker
+              key={venue.id}
+              coordinate={{
+                latitude:
+                  venueLatitude,
+                longitude:
+                  venueLongitude,
+              }}
+              title={venue.name}
+              description={`${venue.category} • ${
+                venue.distance ||
+                "Distância indisponível"
+              }`}
+            />
+          );
+        })}
 
         {hasUserLocation && (
           <Marker
@@ -71,7 +140,9 @@ export function LiveMap() {
 
       {!hasUserLocation && (
         <View style={styles.overlay}>
-          <Text style={styles.overlayText}>
+          <Text
+            style={styles.overlayText}
+          >
             Aguardando sua localização...
           </Text>
         </View>

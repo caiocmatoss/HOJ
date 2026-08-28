@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+
 import {
   Image,
   Pressable,
@@ -15,8 +16,8 @@ interface VenueCardProps {
   category: string;
   distance: string;
   occupancy: number;
-  status: "open" | "closed";
-  image?: string;
+  status: "open" | "closed" | "OPEN" | "CLOSED";
+  image?: string | null;
 }
 
 export function VenueCard({
@@ -31,6 +32,10 @@ export function VenueCard({
   const handlePress = () => {
     router.push(`/venue/${id}`);
   };
+
+  const isOpen =
+    status === "open" ||
+    status === "OPEN";
 
   const occupancyStatus =
     occupancy > 80
@@ -55,7 +60,11 @@ export function VenueCard({
             resizeMode="cover"
           />
         ) : (
-          <View style={styles.imageFallback} />
+          <View style={styles.imageFallback}>
+            <Text style={styles.imageFallbackText}>
+              HOJÉ OND
+            </Text>
+          </View>
         )}
       </View>
 
@@ -81,10 +90,10 @@ export function VenueCard({
         <Text
           style={[
             styles.status,
-            status === "closed" && styles.closed,
+            !isOpen && styles.closed,
           ]}
         >
-          {status === "open"
+          {isOpen
             ? "Aberto agora"
             : "Fechado"}
         </Text>
@@ -107,7 +116,11 @@ const styles = StyleSheet.create({
 
   cardPressed: {
     opacity: 0.82,
-    transform: [{ scale: 0.98 }],
+    transform: [
+      {
+        scale: 0.98,
+      },
+    ],
   },
 
   imageContainer: {
@@ -125,7 +138,15 @@ const styles = StyleSheet.create({
 
   imageFallback: {
     flex: 1,
-    backgroundColor: "#333333",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#252525",
+  },
+
+  imageFallbackText: {
+    color: "#FFD54F",
+    fontSize: 14,
+    fontWeight: "800",
   },
 
   title: {

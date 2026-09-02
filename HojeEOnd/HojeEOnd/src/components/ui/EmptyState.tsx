@@ -1,9 +1,6 @@
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+
+import { colors, fonts, radii } from "@/theme/tokens";
 
 interface EmptyStateProps {
   icon?: string;
@@ -23,31 +20,19 @@ export function EmptyState({
   return (
     <View style={styles.container}>
       <View style={styles.iconContainer}>
-        <Text style={styles.icon}>
-          {icon}
-        </Text>
+        <Text accessibilityElementsHidden style={styles.icon}>{icon}</Text>
       </View>
-
-      <Text style={styles.title}>
-        {title}
-      </Text>
-
-      <Text style={styles.message}>
-        {message}
-      </Text>
+      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.message}>{message}</Text>
 
       {actionLabel && onAction ? (
         <Pressable
+          accessibilityLabel={actionLabel}
+          accessibilityRole="button"
           onPress={onAction}
-          style={({ pressed }) => [
-            styles.button,
-            pressed &&
-              styles.pressed,
-          ]}
+          style={({ pressed }) => [styles.button, pressed && styles.pressed]}
         >
-          <Text style={styles.buttonText}>
-            {actionLabel}
-          </Text>
+          <Text style={styles.buttonText}>{actionLabel}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -56,57 +41,54 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   container: {
-    width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 32,
     paddingHorizontal: 24,
+    paddingVertical: 36,
+    width: "100%",
   },
-
   iconContainer: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: "#2A2300",
     alignItems: "center",
+    backgroundColor: colors.brandSoft,
+    borderColor: colors.brandBorder,
+    borderRadius: 32,
+    borderWidth: 1,
+    height: 64,
     justifyContent: "center",
-    marginBottom: 14,
+    marginBottom: 16,
+    width: 64,
   },
-
-  icon: {
-    fontSize: 34,
-  },
-
+  icon: { fontSize: 28 },
   title: {
-    color: "#FFFFFF",
-    fontSize: 19,
-    fontWeight: "800",
+    color: colors.text,
+    fontFamily: fonts.display,
+    fontSize: 25,
+    lineHeight: 30,
     textAlign: "center",
   },
-
   message: {
-    color: "#888888",
-    fontSize: 13,
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
+    fontSize: 12,
     lineHeight: 19,
-    textAlign: "center",
     marginTop: 7,
+    maxWidth: 360,
+    textAlign: "center",
   },
-
   button: {
-    backgroundColor: "#FFC400",
-    borderRadius: 13,
-    paddingHorizontal: 18,
+    backgroundColor: colors.brand,
+    borderRadius: radii.medium,
+    marginTop: 18,
+    paddingHorizontal: 19,
     paddingVertical: 12,
-    marginTop: 16,
   },
-
   buttonText: {
-    color: "#000000",
-    fontSize: 13,
-    fontWeight: "800",
+    color: colors.background,
+    fontFamily: fonts.bold,
+    fontSize: 12,
   },
-
   pressed: {
-    opacity: 0.8,
+    backgroundColor: colors.brandPressed,
+    transform: [{ scale: 0.98 }],
   },
 });

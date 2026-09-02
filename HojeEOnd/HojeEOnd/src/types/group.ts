@@ -3,5 +3,6 @@ export type Group = {
   name: string;
   venueId: string;
   creatorId?: string;
+  createdAt?: string;
   members: string[];
 };

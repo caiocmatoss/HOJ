@@ -1,6 +1,7 @@
 import { BACKEND_URL } from "@/config/backend";
 import { useUserStore } from "@/store/user-store";
 import { disconnectSocket } from "@/services/socket";
+import { Platform } from "react-native";
 
 export const API_URL = BACKEND_URL;
 
@@ -27,6 +28,9 @@ export type CurrentUserResponse = {
   email: string;
   avatar: string | null;
   bio: string | null;
+  username?: string | null;
+  city?: string | null;
+  phone?: string | null;
   status: "ONLINE" | "OFFLINE";
   createdAt?: string;
   updatedAt?: string;
@@ -43,10 +47,64 @@ export type ApiUser = {
   email: string;
   avatar: string | null;
   bio: string | null;
+  username?: string | null;
+  city?: string | null;
+  phone?: string | null;
   status: "ONLINE" | "OFFLINE";
   createdAt?: string;
   updatedAt?: string;
 };
+
+export type NotificationPreferences = {
+  friendsNearby: boolean;
+  newEvents: boolean;
+  messages: boolean;
+  eventReminders: boolean;
+  friendCheckins: boolean;
+  promotions: boolean;
+  appUpdates: boolean;
+  weeklyDigest: boolean;
+};
+
+export type LocationAccuracy = "HIGH" | "BALANCED";
+export type LocationUpdateFrequency = "REALTIME" | "FIVE_MINUTES" | "FIFTEEN_MINUTES";
+export type ApiLocationPreferences = {
+  precise: boolean;
+  accuracy: LocationAccuracy;
+  updateFreq: LocationUpdateFrequency;
+  shareWithFriends: boolean;
+};
+
+export async function getLocationPreferences(): Promise<ApiLocationPreferences> {
+  return apiRequest<ApiLocationPreferences>("/locations/preferences");
+}
+
+export async function updateLocationPreferences(
+  body: Partial<ApiLocationPreferences>,
+): Promise<ApiLocationPreferences> {
+  return apiRequest<ApiLocationPreferences>("/locations/preferences", { method: "PATCH", body });
+}
+
+export async function deleteMyLocation(): Promise<void> {
+  await apiRequest<void>("/locations", { method: "DELETE" });
+}
+
+export type ApiPrivacyPreferences = { showStatus: boolean; showCheckinHistory: boolean };
+export async function getPrivacyPreferences(): Promise<ApiPrivacyPreferences> { return apiRequest<ApiPrivacyPreferences>("/privacy/preferences"); }
+export async function updatePrivacyPreferences(body: Partial<ApiPrivacyPreferences>): Promise<ApiPrivacyPreferences> { return apiRequest<ApiPrivacyPreferences>("/privacy/preferences", { method: "PATCH", body }); }
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  return apiRequest<NotificationPreferences>("/notifications/preferences");
+}
+
+export async function updateNotificationPreferences(
+  body: Partial<NotificationPreferences>,
+): Promise<NotificationPreferences> {
+  return apiRequest<NotificationPreferences>("/notifications/preferences", {
+    method: "PATCH",
+    body,
+  });
+}
 
 export type ApiFriend = {
   id: string;
@@ -165,6 +223,9 @@ export type ApiCheckinUser = {
   id: string;
   name: string;
   email: string;
+  username?: string | null;
+  city?: string | null;
+  phone?: string | null;
   avatar: string | null;
   bio: string | null;
   status: string;
@@ -380,6 +441,40 @@ export async function apiRequest<T>(
   return data as T;
 }
 
+export function resolveBackendMediaUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+  return value.startsWith('/') ? `${API_URL}${value}` : value;
+}
+
+export type AvatarUploadAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+};
+
+export async function uploadMyAvatar(asset: AvatarUploadAsset): Promise<ApiUser> {
+  const token = useUserStore.getState().accessToken;
+  const form = new FormData();
+  if (Platform.OS === 'web') {
+    const blob = await fetch(asset.uri).then((response) => response.blob());
+    form.append('file', new File([blob], asset.fileName ?? 'avatar', { type: asset.mimeType ?? blob.type }));
+  } else {
+    form.append('file', { uri: asset.uri, name: asset.fileName ?? 'avatar', type: asset.mimeType ?? 'image/jpeg' } as unknown as Blob);
+  }
+  const response = await fetch(`${API_URL}/users/me/avatar`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = Array.isArray(data?.message) ? data.message.join(', ') : data?.message;
+    throw new Error(message ?? `Erro HTTP ${response.status}`);
+  }
+  return data as ApiUser;
+}
+
 function unwrapList<T>(
   response: ApiListResponse<T>,
 ): T[] {
@@ -483,6 +578,9 @@ export async function getMyUser(): Promise<ApiUser> {
 export async function updateMyUser(
   body: {
     name?: string;
+    username?: string | null;
+    city?: string | null;
+    phone?: string | null;
     bio?: string | null;
     avatar?: string | null;
   },

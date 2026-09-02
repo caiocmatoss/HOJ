@@ -17,6 +17,7 @@ type NotificationStore = {
   addNotification: (notification: ApiNotification) => void;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
+  clearNotifications: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 };
@@ -65,6 +66,13 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       set({ loading: false, error: messageFor(error, "Não foi possível marcar as notificações como lidas.") });
     }
   },
+  clearNotifications: () => set({
+    notifications: [],
+    unreadCount: 0,
+    processingIds: {},
+    loading: false,
+    error: null,
+  }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 }));

@@ -34,7 +34,6 @@ export function EventCard({
   isLive,
 }: EventCardProps) {
   const handlePress = () => {
-    console.log("[EventCard] Abrindo evento:", id);
 
     router.push(`/event/${id}`);
   };
@@ -74,7 +73,7 @@ export function EventCard({
         ) : (
           <View style={styles.imageFallback}>
             <Text style={styles.fallbackText}>
-              HOJÉ OND
+              HOJE É ONDE
             </Text>
           </View>
         )}

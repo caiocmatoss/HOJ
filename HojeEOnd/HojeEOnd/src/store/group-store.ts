@@ -77,6 +77,7 @@ const normalizeGroup = (
   venueId: group.venueId,
 
   creatorId: group.creatorId,
+  createdAt: group.createdAt,
 
   members:
     group.members?.map(

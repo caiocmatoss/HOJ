@@ -1,14 +1,9 @@
-import {
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { StyleSheet, Text, View } from "react-native";
 
-type FeedbackType =
-  | "success"
-  | "warning"
-  | "error"
-  | "info";
+import { colors, fonts, radii } from "@/theme/tokens";
+
+type FeedbackType = "success" | "warning" | "error" | "info";
 
 interface FeedbackMessageProps {
   type?: FeedbackType;
@@ -16,166 +11,61 @@ interface FeedbackMessageProps {
   message: string;
 }
 
+const presentation: Record<
+  FeedbackType,
+  {
+    color: string;
+    icon: React.ComponentProps<typeof Ionicons>["name"];
+    surface: string;
+  }
+> = {
+  error: { color: colors.danger, icon: "alert-circle", surface: colors.dangerSoft },
+  info: { color: colors.textSecondary, icon: "information-circle", surface: colors.elevated },
+  success: { color: colors.success, icon: "checkmark-circle", surface: colors.successSoft },
+  warning: { color: colors.brand, icon: "warning", surface: colors.brandSoft },
+};
+
 export function FeedbackMessage({
   type = "info",
   title,
   message,
 }: FeedbackMessageProps) {
+  const variant = presentation[type];
+
   return (
     <View
-      style={[
-        styles.container,
-        getContainerStyle(type),
-      ]}
+      accessibilityLiveRegion="polite"
+      accessibilityRole={type === "error" ? "alert" : undefined}
+      style={[styles.container, { backgroundColor: variant.surface }]}
     >
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.icon,
-            getTitleStyle(type),
-          ]}
-        >
-          {getIcon(type)}
-        </Text>
-
-        {title ? (
-          <Text
-            style={[
-              styles.title,
-              getTitleStyle(type),
-            ]}
-          >
-            {title}
-          </Text>
-        ) : null}
+      <Ionicons color={variant.color} name={variant.icon} size={19} />
+      <View style={styles.copy}>
+        {title ? <Text style={[styles.title, { color: variant.color }]}>{title}</Text> : null}
+        <Text style={[styles.message, !title && styles.messageWithoutTitle]}>{message}</Text>
       </View>
-
-      <Text style={styles.message}>
-        {message}
-      </Text>
     </View>
   );
 }
 
-function getIcon(
-  type: FeedbackType,
-) {
-  switch (type) {
-    case "success":
-      return "✓";
-
-    case "warning":
-      return "⚠";
-
-    case "error":
-      return "✕";
-
-    default:
-      return "ℹ";
-  }
-}
-
-function getContainerStyle(
-  type: FeedbackType,
-) {
-  switch (type) {
-    case "success":
-      return styles.successContainer;
-
-    case "warning":
-      return styles.warningContainer;
-
-    case "error":
-      return styles.errorContainer;
-
-    default:
-      return styles.infoContainer;
-  }
-}
-
-function getTitleStyle(
-  type: FeedbackType,
-) {
-  switch (type) {
-    case "success":
-      return styles.successTitle;
-
-    case "warning":
-      return styles.warningTitle;
-
-    case "error":
-      return styles.errorTitle;
-
-    default:
-      return styles.infoTitle;
-  }
-}
-
 const styles = StyleSheet.create({
   container: {
-    width: "100%",
-    borderRadius: 14,
-    padding: 14,
+    alignItems: "flex-start",
+    borderColor: colors.borderStrong,
+    borderRadius: radii.small,
     borderWidth: 1,
-  },
-
-  header: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    gap: 10,
+    padding: 13,
+    width: "100%",
   },
-
-  icon: {
-    fontSize: 15,
-    fontWeight: "800",
-  },
-
-  title: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
+  copy: { flex: 1, minWidth: 0 },
+  title: { fontFamily: fonts.bold, fontSize: 12 },
   message: {
-    color: "#CCCCCC",
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 6,
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 4,
   },
-
-  successContainer: {
-    backgroundColor: "#17351D",
-    borderColor: "#245C2D",
-  },
-
-  warningContainer: {
-    backgroundColor: "#2A2300",
-    borderColor: "#594A00",
-  },
-
-  errorContainer: {
-    backgroundColor: "#351414",
-    borderColor: "#5C2222",
-  },
-
-  infoContainer: {
-    backgroundColor: "#151E2A",
-    borderColor: "#24354C",
-  },
-
-  successTitle: {
-    color: "#4CAF50",
-  },
-
-  warningTitle: {
-    color: "#FFC400",
-  },
-
-  errorTitle: {
-    color: "#FF6B6B",
-  },
-
-  infoTitle: {
-    color: "#64B5F6",
-  },
+  messageWithoutTitle: { marginTop: 0 },
 });

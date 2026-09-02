@@ -1,25 +1,17 @@
-import { View, ViewProps, StyleSheet } from "react-native";
+import { StyleSheet, View, type ViewProps } from "react-native";
 
-export function Card(props: ViewProps){
+import { colors, radii } from "@/theme/tokens";
 
-  return (
-    <View
-      {...props}
-      style={[
-        styles.card,
-        props.style
-      ]}
-    />
-  );
+export function Card(props: ViewProps) {
+  return <View {...props} style={[styles.card, props.style]} />;
 }
 
-
 const styles = StyleSheet.create({
-
-  card:{
-    backgroundColor:"#1B1B1B",
-    borderRadius:20,
-    padding:16,
-  }
-
+  card: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.large,
+    borderWidth: 1,
+    padding: 16,
+  },
 });

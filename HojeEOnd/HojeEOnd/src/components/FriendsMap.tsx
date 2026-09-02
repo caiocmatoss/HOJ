@@ -270,7 +270,7 @@ export function FriendsMap() {
       {!hasUserLocation && (
         <Text style={styles.warning}>
           A localização é necessária para
-          calcular a distÃ¢ncia dos seus amigos.
+          calcular a distância dos seus amigos.
         </Text>
       )}
     </View>

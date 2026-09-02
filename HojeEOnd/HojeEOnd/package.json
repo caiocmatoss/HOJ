@@ -3,6 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@expo-google-fonts/dm-serif-display": "^0.4.2",
     "@expo/ui": "~57.0.9",
     "@expo/vector-icons": "^15.0.2",
     "@hookform/resolvers": "^5.7.1",
@@ -15,6 +17,8 @@
     "expo-font": "~57.0.1",
     "expo-glass-effect": "~57.0.1",
     "expo-image": "~57.0.2",
+    "expo-image-picker": "~57.0.14",
+    "expo-linear-gradient": "~57.0.1",
     "expo-linking": "~57.0.5",
     "expo-location": "~57.0.8",
     "expo-notifications": "~57.0.9",
@@ -33,6 +37,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.1",
     "socket.io-client": "^4.8.3",
@@ -40,7 +45,11 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/react": "~19.2.2",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.62.1",
+    "pngjs": "^7.0.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -49,6 +58,14 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "test": "node scripts/regression-audit.mjs",
+    "test:e2e": "playwright test --project=chromium-mobile --project=chromium-desktop",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:auth": "playwright test --project=authenticated-chromium",
+    "e2e:web:build": "expo export --platform web",
+    "e2e:web:serve": "node scripts/serve-e2e-web.mjs",
+    "visual:auth": "node scripts/visual-auth-bootstrap.mjs",
+    "visual:home": "node scripts/visual-home-reference.mjs",
     "lint": "expo lint"
   },
   "private": true

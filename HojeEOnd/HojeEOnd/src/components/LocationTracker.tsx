@@ -2,14 +2,17 @@
 
 import * as Location from "expo-location";
 
-import {
-  updateSocketLocation,
-} from "@/services/socket";
+import { deleteMyLocation, getLocationPreferences, type ApiLocationPreferences } from "@/services/api";
+import { updateSocketLocation } from "@/services/socket";
 
 import { useLocationStore } from "@/store/location-store";
 import { usePresenceStore } from "@/store/presence-store";
+import { useLocationPreferencesStore } from "@/store/location-preferences-store";
 
 export default function LocationTracker() {
+  const preferences = useLocationPreferencesStore((state) => state.preferences);
+  const hasPreferences = useLocationPreferencesStore((state) => state.hasLoaded);
+  const loadPreferences = useLocationPreferencesStore((state) => state.loadPreferences);
   const updateLocation =
     useLocationStore(
       (state) =>
@@ -38,7 +41,18 @@ export default function LocationTracker() {
     usePresenceStore(
       (state) =>
         state.updatePosition,
-    );
+      );
+  const setVisible = usePresenceStore((state) => state.setVisible);
+
+  useEffect(() => {
+    setVisible(preferences?.shareWithFriends ?? true);
+  }, [preferences?.shareWithFriends, setVisible]);
+
+  useEffect(() => {
+    if (!hasPreferences) {
+      void loadPreferences().catch(() => undefined);
+    }
+  }, [hasPreferences, loadPreferences]);
 
   useEffect(() => {
     let mounted = true;
@@ -55,12 +69,22 @@ export default function LocationTracker() {
       | number
       | null = null;
 
+    let staleLocationCleared = false;
+
     async function sendLocationToSocket(
       latitude: number,
       longitude: number,
     ) {
       try {
         if (!mounted) {
+          return;
+        }
+
+        if (preferences && !preferences.shareWithFriends) {
+          if (!staleLocationCleared) {
+            staleLocationCleared = true;
+            await deleteMyLocation().catch(() => undefined);
+          }
           return;
         }
 
@@ -242,8 +266,9 @@ export default function LocationTracker() {
           const currentPosition =
             await Location.getCurrentPositionAsync(
               {
-                accuracy:
-                  Location.Accuracy.High,
+                accuracy: preferences?.accuracy === "BALANCED" || preferences?.precise === false
+                  ? Location.Accuracy.Balanced
+                  : Location.Accuracy.High,
               },
             );
 
@@ -271,11 +296,15 @@ export default function LocationTracker() {
         subscription =
           await Location.watchPositionAsync(
             {
-              accuracy:
-                Location.Accuracy.High,
+              accuracy: preferences?.accuracy === "BALANCED" || preferences?.precise === false
+                ? Location.Accuracy.Balanced
+                : Location.Accuracy.High,
 
-              timeInterval:
-                5000,
+              timeInterval: preferences?.updateFreq === "FIVE_MINUTES"
+                ? 300000
+                : preferences?.updateFreq === "FIFTEEN_MINUTES"
+                  ? 900000
+                  : 5000,
 
               distanceInterval:
                 10,
@@ -349,6 +378,7 @@ export default function LocationTracker() {
     setTracking,
     updateLocation,
     updatePosition,
+    preferences,
   ]);
 
   return null;

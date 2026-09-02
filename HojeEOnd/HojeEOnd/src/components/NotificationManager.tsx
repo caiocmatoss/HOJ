@@ -41,6 +41,7 @@ export default function NotificationManager() {
 
   const addNotification = useNotificationStore((state) => state.addNotification);
   const loadNotifications = useNotificationStore((state) => state.loadNotifications);
+  const clearNotifications = useNotificationStore((state) => state.clearNotifications);
   const accessToken = useUserStore((state) => state.accessToken);
 
   useEffect(() => {
@@ -122,6 +123,7 @@ export default function NotificationManager() {
 
   useEffect(() => {
     if (!accessToken) {
+      clearNotifications();
       return;
     }
 
@@ -130,7 +132,12 @@ export default function NotificationManager() {
     const cleanup = onNewNotification(addNotification);
     void joinNotifications().catch((error: unknown) => {
       if (active) {
-        console.error("[Notifications] Socket indisponível:", error);
+        // A falha transitória do canal de notificações não deve bloquear a UI
+        // com um toast técnico global. O socket mantém sua própria estratégia
+        // de reconexão; em desenvolvimento registramos apenas um aviso.
+        if (__DEV__) {
+          console.warn("[Notifications] Socket indisponível", error);
+        }
       }
     });
     return () => {
@@ -138,7 +145,7 @@ export default function NotificationManager() {
       cleanup();
       leaveNotifications();
     };
-  }, [accessToken, addNotification, loadNotifications]);
+  }, [accessToken, addNotification, clearNotifications, loadNotifications]);
 
   return null;
 }

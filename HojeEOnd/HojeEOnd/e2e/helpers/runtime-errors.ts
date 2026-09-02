@@ -1,0 +1,4 @@
+import type { Page } from "@playwright/test";
+const critical = [/Rendered more hooks than during the previous render/i, /cannot contain a nested/i, /validateDOMNesting/i, /GO_BACK was not handled/i, /Maximum update depth/i, /Cannot read properties of (undefined|null)/i, /Unhandled promise rejection/i, /Minified React error/i, /Hydration failed/i];
+export function captureCriticalRuntimeErrors(page: Page) { const failures: string[] = []; page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`)); page.on("console", (message) => { if (message.type() === "error" && critical.some((pattern) => pattern.test(message.text()))) failures.push(`console: ${message.text()}`); }); return failures; }
+export function assertNoCriticalRuntimeErrors(failures: string[]) { if (failures.length) throw new Error(failures.join("\n")); }

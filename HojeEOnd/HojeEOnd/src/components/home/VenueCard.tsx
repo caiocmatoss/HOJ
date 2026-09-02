@@ -62,7 +62,7 @@ export function VenueCard({
         ) : (
           <View style={styles.imageFallback}>
             <Text style={styles.imageFallbackText}>
-              HOJÉ OND
+              HOJE É ONDE
             </Text>
           </View>
         )}

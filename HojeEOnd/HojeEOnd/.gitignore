@@ -33,6 +33,7 @@ yarn-error.*
 # local env files
 .env
 .env*.local
+.visual/auth-state.json
 
 # typescript
 *.tsbuildinfo
@@ -47,3 +48,9 @@ example
 *.bak
 *backup*
 *.before-*
+test-results/
+playwright-report/
+blob-report/
+e2e/.auth/
+tmp-trace/
+expo-diag-*.log

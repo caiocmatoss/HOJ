@@ -1,8 +1,19 @@
 import {
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_600SemiBold,
+  DMSans_700Bold,
+} from "@expo-google-fonts/dm-sans";
+import { DMSerifDisplay_400Regular } from "@expo-google-fonts/dm-serif-display";
+import { useFonts } from "expo-font";
+import {
   Stack,
   router,
   useSegments,
 } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 
 import {
   useEffect,
@@ -19,8 +30,25 @@ import {
 import {
   useUserStore,
 } from "@/store/user-store";
+import { colors } from "@/theme/tokens";
+
+void SplashScreen.preventAutoHideAsync();
+SplashScreen.setOptions({ duration: 420, fade: true });
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_600SemiBold,
+    DMSans_700Bold,
+    DMSerifDisplay_400Regular,
+  });
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.style.backgroundColor = colors.background;
+    document.body.style.backgroundColor = colors.background;
+  }, []);
   const segments = useSegments();
 
   const user = useUserStore(
@@ -48,6 +76,12 @@ export default function RootLayout() {
     sessionReady,
     setSessionReady,
   ] = useState(false);
+
+  useEffect(() => {
+    if (sessionReady && (fontsLoaded || fontError)) {
+      void SplashScreen.hideAsync();
+    }
+  }, [fontError, fontsLoaded, sessionReady]);
 
   useEffect(() => {
     let mounted = true;
@@ -112,6 +146,18 @@ export default function RootLayout() {
     const firstSegment =
       segments[0];
 
+    // The Figma reference is an isolated, design-only route. It must remain
+    // reachable without a session and must never be sent through the auth
+    // redirects used by the product screens.
+    const isFigmaReferenceRoute =
+      __DEV__ && firstSegment === "figma-home-reference";
+    const isVisualHarnessRoute =
+      __DEV__ && firstSegment === "visual-home-states";
+
+    if (isFigmaReferenceRoute || isVisualHarnessRoute) {
+      return;
+    }
+
     const isAuthRoute =
       firstSegment === "(auth)";
 
@@ -168,7 +214,7 @@ export default function RootLayout() {
     segments,
   ]);
 
-  if (!sessionReady) {
+  if ((!fontsLoaded && !fontError) || !sessionReady) {
     return null;
   }
 
@@ -201,7 +247,8 @@ export default function RootLayout() {
     );
 
   return (
-    <>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <StatusBar style="light" />
       <NotificationManager />
 
       {isAuthenticated && (
@@ -213,8 +260,7 @@ export default function RootLayout() {
           headerShown: false,
 
           contentStyle: {
-            backgroundColor:
-              "#090909",
+            backgroundColor: colors.background,
           },
         }}
       >
@@ -232,7 +278,12 @@ export default function RootLayout() {
         <Stack.Screen
           name="event/[id]"
         />
+
+        <Stack.Screen
+          name="figma-home-reference"
+          options={{ headerShown: false }}
+        />
       </Stack>
-    </>
+    </SafeAreaProvider>
   );
 }

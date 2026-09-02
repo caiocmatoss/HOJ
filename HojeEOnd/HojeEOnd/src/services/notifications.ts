@@ -27,7 +27,7 @@ export async function configureNotifications(): Promise<void> {
       "default",
       {
         name:
-          "HOJÉ OND",
+          "HOJE É ONDE",
 
         importance:
           Notifications.AndroidImportance.HIGH,
@@ -101,7 +101,7 @@ export async function scheduleLocalNotification({
 export async function sendTestNotification() {
   return scheduleLocalNotification({
     title:
-      "HOJÉ OND 🎉",
+      "HOJE É ONDE 🎉",
 
     body:
       "As notificações estão funcionando.",

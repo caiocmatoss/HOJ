@@ -1,0 +1,7 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { colors, fonts } from "@/theme/tokens";
+import { VISUAL_CATEGORIES, normalizeVisualCategory } from "./visualCategories";
+import type { NearbyDiscoveryItem } from "@/components/home/NearbyDiscoveryCard";
+export function FigmaNearbyCard({ item, onPress }: { item: NearbyDiscoveryItem; onPress: () => void }) { const meta = [item.category, item.distance, item.occupancy ?? item.detail].filter(Boolean).join(" · "); const dotColor = VISUAL_CATEGORIES[normalizeVisualCategory(item.category ?? (item.kind === "event" ? "event" : "bar"))].color; return <Pressable onPress={onPress} style={styles.card}><View style={[styles.dot, { backgroundColor: dotColor }]} /><View style={styles.copy}><Text numberOfLines={1} style={styles.title}>{item.title}</Text><Text numberOfLines={1} style={styles.meta}>{meta}</Text></View><Ionicons name="chevron-forward" size={16} color="#2A3340" /></Pressable>; }
+const styles = StyleSheet.create({ card: { minHeight: 60, flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.surface, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 14, borderWidth: 1, borderColor: "rgba(248,250,252,.05)" }, dot: { width: 8, height: 8, borderRadius: 4 }, copy: { flex: 1 }, title: { color: colors.text, fontFamily: fonts.semibold, fontSize: 14 }, meta: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 12, marginTop: 1 } });

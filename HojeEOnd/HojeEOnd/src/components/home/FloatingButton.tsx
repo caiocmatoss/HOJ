@@ -1,59 +1,38 @@
-import {
-  Pressable,
-  Text,
-  StyleSheet
-} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { Platform, Pressable, StyleSheet } from "react-native";
 
+import { colors, shadows } from "@/theme/tokens";
 
-export function FloatingButton(){
+export function FloatingButton() {
   const router = useRouter();
 
   return (
-
     <Pressable
-      style={styles.button}
-      onPress={() => router.push("/(main)/group/create")}
-      accessibilityRole="button"
+      accessibilityHint="Abre a criação de um novo grupo"
       accessibilityLabel="Criar grupo"
+      accessibilityRole="button"
+      onPress={() => router.push("/(main)/group/create")}
+      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
     >
-
-      <Text style={styles.text}>
-        +
-      </Text>
-
+      <Ionicons color={colors.background} name="add" size={26} />
     </Pressable>
-
   );
-
 }
 
-
 const styles = StyleSheet.create({
-
- button:{
-   position:"absolute",
-   right:25,
-   bottom:30,
-
-   width:65,
-   height:65,
-
-   borderRadius:40,
-
-   backgroundColor:"#FFC400",
-
-   justifyContent:"center",
-   alignItems:"center",
-
-   elevation:10,
- },
-
-
- text:{
-   color:"#000",
-   fontSize:40,
-   fontWeight:"300",
- },
-
+  button: {
+    alignItems: "center",
+    backgroundColor: colors.brand,
+    borderRadius: 27,
+    bottom: 18,
+    height: 54,
+    justifyContent: "center",
+    position: "absolute",
+    right: 18,
+    width: 54,
+    ...shadows.floating,
+    ...(Platform.OS === "web" ? { bottom: 18, right: 18 } : {}),
+  },
+  pressed: { backgroundColor: colors.brandPressed, transform: [{ scale: 0.95 }] },
 });

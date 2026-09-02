@@ -54,3 +54,4 @@ blob-report/
 e2e/.auth/
 tmp-trace/
 expo-diag-*.log
+.visual/

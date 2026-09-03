@@ -1,1 +1,1 @@
-export { default } from "@/features/social/InvitesExperience";
+import { Redirect } from "expo-router"; export default function InvitesRedirect() { return <Redirect href={"/(main)/explore" as never} />; }

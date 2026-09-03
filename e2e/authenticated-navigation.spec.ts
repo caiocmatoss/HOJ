@@ -19,6 +19,24 @@ test.describe("authenticated read-only navigation", () => {
     assertNoCriticalRuntimeErrors(failures);
   });
 
+  test("Explore notifications opens Notification Center overlay and back returns to Explore", async ({ page }) => {
+    const failures = captureCriticalRuntimeErrors(page);
+    await gotoExpoRoute(page, "/explore");
+    await expect(page.getByText("Explorar", { exact: true }).first()).toBeVisible();
+    await page.getByLabel("Abrir notificações").click();
+    await expect(page).toHaveURL(/\/explore(?:[/?#]|$)/);
+    await expect(page.getByText("Notificações", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Voltar")).toBeVisible();
+    const metrics = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: window.innerWidth, text: document.body.innerText }));
+    expect(metrics.width).toBeLessThanOrEqual(metrics.viewport + 2);
+    expect(metrics.text).not.toContain("�");
+    await page.getByLabel("Voltar").click();
+    await expect(page).toHaveURL(/\/explore(?:[/?#]|$)/);
+    await expect(page.getByText("Notificações", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Explorar", { exact: true }).first()).toBeVisible();
+    assertNoCriticalRuntimeErrors(failures);
+  });
+
   test("legacy Groups route redirects to Chat", async ({ page }) => {
     await gotoExpoRoute(page, "/groups");
     await expect(page).toHaveURL(/\/chat(?:[/?#]|$)/);
@@ -33,7 +51,7 @@ test.describe("authenticated read-only navigation", () => {
       await expect(page.locator("body")).toBeVisible();
       const metrics = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: window.innerWidth, text: document.body.innerText }));
       expect(metrics.width).toBeLessThanOrEqual(metrics.viewport + 2);
-      expect(metrics.text).not.toContain("�");
+      expect(metrics.text).not.toContain("ï¿½");
       assertNoCriticalRuntimeErrors(failures);
     });
   }
@@ -51,7 +69,6 @@ test.describe("authenticated read-only navigation", () => {
       await gotoExpoRoute(page, route);
       const titles = { Notifications: "Notificações", Privacy: "Privacidade", Location: "Localização", Appearance: "Aparência", Help: "Ajuda e suporte" } as const;
       await expect(page.getByText(titles[name], { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-      // Settings Header renders its back Pressable before any content/tab actions.
       await settingsBack(page).click();
       await expect(page).toHaveURL(/\/profile(?:[/?#]|$)/);
     });

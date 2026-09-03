@@ -1,5 +1,7 @@
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
+import NotificationCenterExperience from "@/features/notifications/NotificationCenterExperience";
+import { NotificationCenterOverlayProvider, useNotificationCenterOverlay } from "./NotificationCenterOverlayContext";
 import { Platform } from "react-native";
 
 import { colors, fonts } from "@/theme/tokens";
@@ -9,6 +11,11 @@ import { FigmaTabIcon } from "./FigmaTabIcon";
 function tabIcon(name: string) { return ({ focused }: { focused: boolean }) => <FigmaTabIcon name={name} focused={focused} />; }
 
 export default function MainTabsExperience() {
+  return <NotificationCenterOverlayProvider><MainTabsShell /></NotificationCenterOverlayProvider>;
+}
+
+function MainTabsShell() {
+  const { isNotificationCenterOpen, closeNotificationCenter } = useNotificationCenterOverlay();
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return;
     document.body.style.backgroundColor = colors.background;
@@ -87,6 +94,7 @@ export default function MainTabsExperience() {
       <Tabs.Screen name="group/chat/[id]" options={{ href: null }} />
       <Tabs.Screen name="group/invite" options={{ href: null }} />
       </Tabs>
+      {isNotificationCenterOpen && <NotificationCenterExperience onClose={closeNotificationCenter} />}
     </MobileWebPreview>
   );
 }

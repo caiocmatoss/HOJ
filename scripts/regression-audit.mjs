@@ -16,6 +16,7 @@ const explore = read("src/features/discovery/FigmaExploreExperience.tsx");
 const cover = read("src/features/profile/FigmaProfileExperience.tsx");
 const notificationCenter = read("src/features/notifications/NotificationCenterExperience.tsx");
 const invitesRoute = read("src/app/(main)/invites.tsx");
+const venueState = read("src/utils/venue-state.ts");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
 assert("groups is hidden from primary tab bar", /name="groups" options=\{\{ href: null \}\}/.test(tabs));
@@ -31,6 +32,9 @@ assert("explore opens notification center overlay", explore.includes("openNotifi
 assert("legacy invites route redirects to explore", invitesRoute.includes("/(main)/explore"));
 assert("notification preferences remain separate", read("src/app/(main)/notifications.tsx").includes("FigmaNotificationsExperience") && notificationCenter.includes("useInviteStore"));
 assert("notification center has no demo data", !["Lara", "Mateus", "Mariana F.", "Ricardo A.", "Clos Lounge", "Primavera Sound SP"].some((token) => notificationCenter.includes(token)));
+assert("imported FSQ occupancy requires real capacity", venueState.includes('venue.source === "IMPORTED"') && venueState.includes("capacity !== null") && venueState.includes("Movimento indisponível"));
+assert("imported FSQ availability is neutral", venueState.includes('venue.externalProvider === "FSQ_OS"') && venueState.includes("Horário indisponível"));
+assert("manual occupancy labels remain available", venueState.includes("Cheio") && venueState.includes("Movimentado") && venueState.includes("Tranquilo"));
 
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]

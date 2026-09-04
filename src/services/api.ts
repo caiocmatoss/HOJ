@@ -186,6 +186,19 @@ export type ApiVenue = {
   longitude: number | string;
 
   occupancy: number;
+  capacity: number | null;
+  source: "MANUAL" | "IMPORTED";
+  externalProvider: string | null;
+  externalId: string | null;
+  locality: string | null;
+  region: string | null;
+  country: string | null;
+  postcode: string | null;
+  phone: string | null;
+  website: string | null;
+  sourceRefreshedAt: string | null;
+  sourceClosedAt: string | null;
+
 
   description: string | null;
 
@@ -895,12 +908,17 @@ export async function getNearbyFriends(
  * =====================================================
  */
 
-export async function getVenues(): Promise<ApiVenue[]> {
+export async function getVenues(options: { q?: string; limit?: number; category?: string; locality?: string; region?: string; country?: string; source?: "MANUAL" | "IMPORTED" } = { limit: 100 }): Promise<ApiVenue[]> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   const response =
     await apiRequest<
       ApiListResponse<ApiVenue>
     >(
-      "/venues",
+      `/venues${suffix}`,
       {
         authenticated: false,
       },

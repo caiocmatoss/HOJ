@@ -6,14 +6,13 @@ import { MAIN_TAB_BAR_HEIGHT } from "@/features/navigation/tabBarMetrics";
 import { colors, fonts, radii } from "@/theme/tokens";
 import { OccupancyBar } from "./OccupancyBar";
 import { VISUAL_CATEGORIES, normalizeVisualCategory } from "./visualCategories";
+import { getVenueOccupancyState } from "@/utils/venue-state";
 
 type Props = { venue: ApiVenue; distance?: string; onClose: () => void; onViewDetails: () => void; friends?: Array<{ name: string; avatar?: string | null }>; onShare?: () => void };
 
 export function VenueSheet({ venue, distance, onClose, onViewDetails }: Props) {
-  const occupancy = Number(venue.occupancy);
-  const hasOccupancy = Number.isFinite(occupancy);
-  const level = hasOccupancy ? (occupancy > 70 ? 2 : occupancy > 40 ? 1 : 0) : 0;
-  const status = level === 2 ? "Cheio" : level === 1 ? "Movimentado" : "Tranquilo";
+  const occupancyState = getVenueOccupancyState(venue);
+  const level = occupancyState.known ? (occupancyState.percentage! > 70 ? 2 : occupancyState.percentage! > 40 ? 1 : 0) : 0;
   const visualCategory = normalizeVisualCategory(venue.category);
   const categoryColor = VISUAL_CATEGORIES[visualCategory].color;
   const cleanDistance = distance?.trim();
@@ -30,7 +29,7 @@ export function VenueSheet({ venue, distance, onClose, onViewDetails }: Props) {
           <View style={styles.content}>
             <View style={styles.row}>
               <View style={styles.flex}><Text numberOfLines={2} style={styles.title}>{venue.name}</Text><Text style={styles.meta}>{cleanDistance ? `${venue.category} · ${cleanDistance}` : venue.category}</Text></View>
-              {hasOccupancy ? <View style={styles.occ}><View style={styles.occLabel}><View style={[styles.occDot, { backgroundColor: level === 2 ? colors.danger : level === 1 ? colors.brand : colors.success }]} /><Text style={styles.occText}>{status}</Text></View><OccupancyBar level={level as 0 | 1 | 2} /></View> : null}
+              <View style={styles.occ}><View style={styles.occLabel}><View style={[styles.occDot, { backgroundColor: occupancyState.known ? (level === 2 ? colors.danger : level === 1 ? colors.brand : colors.success) : colors.textMuted }]} /><Text style={styles.occText}>{occupancyState.label}</Text></View>{occupancyState.known ? <OccupancyBar level={level as 0 | 1 | 2} /> : null}</View>
             </View>
             <View style={styles.actions}><Pressable accessibilityLabel={`Ver detalhes de ${venue.name}`} accessibilityRole="button" testID="venue-sheet-cta" style={({ pressed }) => [styles.primary, pressed && styles.pressed]} onPress={onViewDetails}><Text style={styles.primaryText}>Ver local</Text><Ionicons name="arrow-forward" color={colors.background} size={17} /></Pressable></View>
           </View>

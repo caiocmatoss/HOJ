@@ -32,9 +32,12 @@ assert("explore opens notification center overlay", explore.includes("openNotifi
 assert("legacy invites route redirects to explore", invitesRoute.includes("/(main)/explore"));
 assert("notification preferences remain separate", read("src/app/(main)/notifications.tsx").includes("FigmaNotificationsExperience") && notificationCenter.includes("useInviteStore"));
 assert("notification center has no demo data", !["Lara", "Mateus", "Mariana F.", "Ricardo A.", "Clos Lounge", "Primavera Sound SP"].some((token) => notificationCenter.includes(token)));
-assert("imported FSQ occupancy requires real capacity", venueState.includes('venue.source === "IMPORTED"') && venueState.includes("capacity !== null") && venueState.includes("Movimento indisponível"));
+assert("imported FSQ occupancy requires real capacity", venueState.includes("occupancyPercent") && venueState.includes("Number.isFinite(percentage)") && venueState.includes("Movimento indisponível"));
 assert("imported FSQ availability is neutral", venueState.includes('venue.externalProvider === "FSQ_OS"') && venueState.includes("Horário indisponível"));
 assert("manual occupancy labels remain available", venueState.includes("Cheio") && venueState.includes("Movimentado") && venueState.includes("Tranquilo"));
+assert("occupancy uses API percent directly", venueState.includes("Number(venue.occupancyPercent)") && !venueState.includes("venue.occupancy)"));
+assert("zero percent is known", venueState.includes("Number.isFinite(percentage)") && venueState.includes("percentage > 70"));
+assert("over-capacity percent is preserved", venueState.includes("percentage }"));
 
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]

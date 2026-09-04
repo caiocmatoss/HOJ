@@ -187,6 +187,7 @@ export type ApiVenue = {
 
   occupancy: number;
   capacity: number | null;
+  occupancyPercent: number | null;
   source: "MANUAL" | "IMPORTED";
   externalProvider: string | null;
   externalId: string | null;

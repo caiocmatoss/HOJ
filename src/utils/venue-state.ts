@@ -6,12 +6,10 @@ export type VenueOccupancyState = {
   percentage: number | null;
 };
 
-export function getVenueOccupancyState(venue: Pick<ApiVenue, "occupancy" | "capacity">): VenueOccupancyState {
-  const occupancy = Number(venue.occupancy);
-  const capacity = venue.capacity == null ? null : Number(venue.capacity);
-  const known = Number.isFinite(occupancy) && capacity !== null && Number.isFinite(capacity) && capacity > 0;
+export function getVenueOccupancyState(venue: Pick<ApiVenue, "occupancyPercent">): VenueOccupancyState {
+  const percentage = venue.occupancyPercent == null ? null : Number(venue.occupancyPercent);
+  const known = percentage !== null && Number.isFinite(percentage);
   if (!known) return { known: false, label: "Movimento indisponível", percentage: null };
-  const percentage = Math.max(0, Math.min(100, occupancy));
   return { known: true, label: percentage > 70 ? "Cheio" : percentage > 40 ? "Movimentado" : "Tranquilo", percentage };
 }
 

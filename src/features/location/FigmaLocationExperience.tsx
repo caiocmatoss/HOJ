@@ -1,29 +1,31 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MAIN_TAB_BAR_HEIGHT } from "@/features/navigation/tabBarMetrics";
-import { getLocationPreferences, updateLocationPreferences, type ApiLocationPreferences } from "@/services/api";
+import { useLocationPreferencesQuery, useUpdateLocationPreferencesMutation, type LocationPreferences } from "@/services/api/resources/profile";
 import { colors, fonts } from "@/theme/tokens";
 
 const accuracyOptions = [{ value: "HIGH", label: "Alta precisão" }, { value: "BALANCED", label: "Economia de bateria" }, { value: "DEVICE", label: "Somente dispositivo" }] as const;
 const frequencyOptions = [{ value: "REALTIME", label: "Tempo real" }, { value: "FIVE_MINUTES", label: "A cada 5 minutos" }, { value: "FIFTEEN_MINUTES", label: "A cada 15 minutos" }] as const;
-const defaults: ApiLocationPreferences = { precise: true, accuracy: "HIGH", updateFreq: "REALTIME", shareWithFriends: true };
+const defaults: LocationPreferences = { precise: true, accuracy: "HIGH", updateFreq: "REALTIME", shareWithFriends: true };
 
 export default function FigmaLocationExperience() {
   const router = useRouter();
-  const [preferences, setPreferences] = useState<ApiLocationPreferences | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const preferencesQuery = useLocationPreferencesQuery();
+  const updateMutation = useUpdateLocationPreferencesMutation();
+  const preferences = preferencesQuery.data ?? null;
+  const loading = preferencesQuery.isLoading;
+  const error = preferencesQuery.error ? "Não foi possível carregar suas preferências de localização." : null;
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [picker, setPicker] = useState<"accuracy" | "frequency" | null>(null);
-  useEffect(() => { void load(); }, []);
-  async function load() { setLoading(true); setError(null); try { setPreferences(await getLocationPreferences()); } catch { setError("Não foi possível carregar suas preferências de localização."); } finally { setLoading(false); } }
-  async function patch(key: keyof ApiLocationPreferences, value: unknown) { if (!preferences) return; const previous = preferences; setPreferences({ ...preferences, [key]: value } as ApiLocationPreferences); try { setPreferences(await updateLocationPreferences({ [key]: value } as Partial<ApiLocationPreferences>)); } catch { setPreferences(previous); setError("Não foi possível salvar essa preferência."); } }
+  async function load() { await preferencesQuery.refetch(); }
+  async function patch<K extends keyof LocationPreferences>(key: K, value: LocationPreferences[K]) { if (updateMutation.isPending) return; try { setMutationError(null); await updateMutation.mutateAsync({ [key]: value }); } catch { setMutationError("Não foi possível salvar essa preferência."); } }
   if (loading && !preferences) return <View style={styles.root}><Header onBack={() => router.replace("/(main)/profile")} /><View style={styles.center}><ActivityIndicator color={colors.brand} /></View></View>;
   if (error && !preferences) return <View style={styles.root}><Header onBack={() => router.replace("/(main)/profile")} /><View style={styles.center}><Text style={styles.error}>{error}</Text><Pressable onPress={() => void load()}><Text style={styles.retry}>Tentar novamente</Text></Pressable></View></View>;
   const value = preferences ?? defaults;
   return <View style={styles.root}><Header onBack={() => router.replace("/(main)/profile")} /><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-    {error ? <Text style={styles.error}>{error}</Text> : null}
+    {error || mutationError ? <Text style={styles.error}>{error ?? mutationError}</Text> : null}
     <Section title="Permissões" />
     <ToggleRow label="Localização precisa" sub="Usa GPS para precisão máxima de posição" value={value.precise} onPress={() => void patch("precise", !value.precise)} />
     <ToggleRow label="Em segundo plano" sub="Atualiza quando o app está fechado · Em breve" value={false} disabled />
@@ -34,7 +36,7 @@ export default function FigmaLocationExperience() {
     <ToggleRow label="Compartilhar com amigos" sub="Amigos podem ver onde você está" value={value.shareWithFriends} onPress={() => void patch("shareWithFriends", !value.shareWithFriends)} />
     <ToggleRow label="Salvar histórico" sub="Guarda os lugares onde você esteve · Em breve" value={false} disabled />
     <View style={styles.info}><Text style={styles.infoText}>A localização é usada apenas para mostrar lugares e eventos próximos. Seus dados nunca são vendidos a terceiros.</Text></View>
-  </ScrollView><Modal transparent visible={picker !== null} animationType="fade" onRequestClose={() => setPicker(null)}><Pressable style={styles.backdrop} onPress={() => setPicker(null)}><View style={styles.modal}><Text style={styles.modalTitle}>{picker === "accuracy" ? "Precisão" : "Frequência de atualização"}</Text>{(picker === "accuracy" ? accuracyOptions : frequencyOptions).map((option) => <Pressable key={option.value} style={styles.option} onPress={() => { if (picker === "accuracy") { if (option.value !== "DEVICE") void patch("accuracy", option.value); } else void patch("updateFreq", option.value); setPicker(null); }}><Text style={styles.optionText}>{option.label}</Text>{((picker === "accuracy" && option.value === value.accuracy) || (picker === "frequency" && option.value === value.updateFreq)) && <Ionicons name="checkmark" size={18} color={colors.brand} />}</Pressable>)}</View></Pressable></Modal></View>;
+  </ScrollView><Modal transparent visible={picker !== null} animationType="fade" onRequestClose={() => setPicker(null)}><Pressable style={styles.backdrop} onPress={() => setPicker(null)}><View style={styles.modal}><Text style={styles.modalTitle}>{picker === "accuracy" ? "Precisão" : "Frequência de atualização"}</Text>{(picker === "accuracy" ? accuracyOptions : frequencyOptions).map((option) => <Pressable key={option.value} style={styles.option} onPress={() => { if (picker === "accuracy") { if (option.value !== "DEVICE") void patch("accuracy", option.value === "HIGH" || option.value === "BALANCED" ? option.value : value.accuracy); } else void patch("updateFreq", option.value === "REALTIME" || option.value === "FIVE_MINUTES" || option.value === "FIFTEEN_MINUTES" ? option.value : value.updateFreq); setPicker(null); }}><Text style={styles.optionText}>{option.label}</Text>{((picker === "accuracy" && option.value === value.accuracy) || (picker === "frequency" && option.value === value.updateFreq)) && <Ionicons name="checkmark" size={18} color={colors.brand} />}</Pressable>)}</View></Pressable></Modal></View>;
 }
 function Header({ onBack }: { onBack: () => void }) { return <View style={styles.header}><Pressable onPress={onBack} accessibilityRole="button" hitSlop={8}><Ionicons name="arrow-back" size={20} color={colors.brand} /></Pressable><Text style={styles.title}>Localização</Text></View>; }
 function Section({ title }: { title: string }) { return <Text style={styles.section}>{title.toUpperCase()}</Text>; }

@@ -73,7 +73,6 @@ export default function EditProfileExperience() {
   const handleSave = async () => {
     const trimmedName = name.trim();
     const trimmedBio = bio.trim();
-    const trimmedAvatar = avatar.trim();
 
     if (!trimmedName) {
       setError("Digite seu nome para continuar.");
@@ -87,7 +86,6 @@ export default function EditProfileExperience() {
       const updatedUser = await updateMyUser({
         name: trimmedName,
         bio: trimmedBio,
-        ...(trimmedAvatar ? { avatar: trimmedAvatar } : {}),
       });
 
       setStoredVisible(visible);

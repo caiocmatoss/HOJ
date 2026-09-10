@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,13 +10,9 @@ import {
   View,
 } from "react-native";
 
-import {
-  getNotificationPreferences,
-  type NotificationPreferences,
-  updateNotificationPreferences,
-} from "@/services/api";
 import { MAIN_TAB_BAR_HEIGHT } from "@/features/navigation/tabBarMetrics";
 import { colors, fonts } from "@/theme/tokens";
+import { useNotificationPreferencesQuery, useUpdateNotificationPreferencesMutation, type NotificationPreferences } from "@/services/api/resources/profile";
 
 type PreferenceKey = keyof NotificationPreferences;
 type Row = [PreferenceKey, string, string];
@@ -54,36 +50,19 @@ function ToggleSwitch({ value, onPress }: { value: boolean; onPress: () => void 
 export default function FigmaNotificationsExperience() {
   const router = useRouter();
   const handleBack = () => router.replace("/(main)/profile");
-  const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const preferencesQuery = useNotificationPreferencesQuery();
+  const updateMutation = useUpdateNotificationPreferencesMutation();
+  const preferences = preferencesQuery.data ?? null;
+  const loading = preferencesQuery.isLoading;
+  const error = preferencesQuery.error ? "Não foi possível carregar suas preferências." : null;
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void getNotificationPreferences()
-      .then((value) => { if (active) setPreferences(value); })
-      .catch(() => { if (active) setError("Não foi possível carregar suas preferências."); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
-
-  const retry = () => {
-    setLoading(true);
-    setError(null);
-    void getNotificationPreferences()
-      .then(setPreferences)
-      .catch(() => setError("Não foi possível carregar suas preferências."))
-      .finally(() => setLoading(false));
-  };
-
-  const toggle = (key: PreferenceKey) => {
-    if (!preferences) return;
-    const previous = preferences[key];
-    setPreferences({ ...preferences, [key]: !previous });
-    void updateNotificationPreferences({ [key]: !previous }).catch(() => {
-      setPreferences((current) => current ? { ...current, [key]: previous } : current);
-      setError("Não foi possível salvar essa preferência.");
-    });
+  const retry = () => { void preferencesQuery.refetch(); };
+  const toggle = async (key: PreferenceKey) => {
+    if (!preferences || updateMutation.isPending) return;
+    setMutationError(null);
+    try { await updateMutation.mutateAsync({ [key]: !preferences[key] }); }
+    catch { setMutationError("Não foi possível salvar essa preferência."); }
   };
 
   return (
@@ -103,14 +82,14 @@ export default function FigmaNotificationsExperience() {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error || mutationError ? <Text style={styles.error}>{error ?? mutationError}</Text> : null}
           {sections.map(([title, rows]) => (
             <View key={title}>
               <Text style={styles.sectionTitle}>{title}</Text>
               {rows.map(([key, label, subtitle]) => (
                 <View key={key} style={styles.row}>
                   <View style={styles.copy}><Text style={styles.label}>{label}</Text><Text style={styles.subtitle}>{subtitle}</Text></View>
-                  <ToggleSwitch value={Boolean(preferences?.[key])} onPress={() => toggle(key)} />
+                  <ToggleSwitch value={Boolean(preferences?.[key])} onPress={() => { void toggle(key); }} />
                 </View>
               ))}
             </View>

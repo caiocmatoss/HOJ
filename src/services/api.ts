@@ -65,6 +65,9 @@ export type NotificationPreferences = {
   promotions: boolean;
   appUpdates: boolean;
   weeklyDigest: boolean;
+  pushEnabled: boolean;
+  friendRequests: boolean;
+  groupInvites: boolean;
 };
 
 export type LocationAccuracy = "HIGH" | "BALANCED";
@@ -90,7 +93,7 @@ export async function deleteMyLocation(): Promise<void> {
   await apiRequest<void>("/locations", { method: "DELETE" });
 }
 
-export type ApiPrivacyPreferences = { showStatus: boolean; showCheckinHistory: boolean };
+export type ApiPrivacyPreferences = { showStatus: boolean; showLastSeen: boolean; showCheckinHistory: boolean };
 export async function getPrivacyPreferences(): Promise<ApiPrivacyPreferences> { return apiRequest<ApiPrivacyPreferences>("/privacy/preferences"); }
 export async function updatePrivacyPreferences(body: Partial<ApiPrivacyPreferences>): Promise<ApiPrivacyPreferences> { return apiRequest<ApiPrivacyPreferences>("/privacy/preferences", { method: "PATCH", body }); }
 
@@ -110,7 +113,7 @@ export async function updateNotificationPreferences(
 export type ApiFriend = {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   avatar: string | null;
   bio: string | null;
   status: "ONLINE" | "OFFLINE";
@@ -159,7 +162,6 @@ export type ApiFriendRequestStatus =
 export type ApiFriendRequestUser = {
   id: string;
   name: string;
-  email: string;
   avatar: string | null;
   bio?: string | null;
   status: "ONLINE" | "OFFLINE" | string;
@@ -545,7 +547,6 @@ export async function updateMyUser(
     city?: string | null;
     phone?: string | null;
     bio?: string | null;
-    avatar?: string | null;
   },
 ): Promise<ApiUser> {
   return apiRequest<ApiUser>(

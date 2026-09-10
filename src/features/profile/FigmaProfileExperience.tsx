@@ -10,9 +10,12 @@ import { useFavoriteStore } from "@/store/favorite-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts } from "@/theme/tokens";
 import { resolveBackendMediaUrl } from "@/services/api";
+import { useMeQuery } from "@/services/api/resources/profile";
 
 export default function FigmaProfileExperience() {
-  const user = useUserStore((s) => s.user);
+  const legacyUser = useUserStore((s) => s.user);
+  const meQuery = useMeQuery();
+  const user = meQuery.data ?? legacyUser;
   const favorites = useFavoriteStore((s) => s.favoriteVenues);
   const loadFavorites = useFavoriteStore((s) => s.loadFavorites);
   const clearChats = useChatStore((s) => s.clearAllChats);

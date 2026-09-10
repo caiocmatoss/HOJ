@@ -1,29 +1,29 @@
+import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MAIN_TAB_BAR_HEIGHT } from "@/features/navigation/tabBarMetrics";
 import { colors, fonts } from "@/theme/tokens";
-import { useLocationPreferencesStore } from "@/store/location-preferences-store";
-import { usePrivacyPreferencesStore } from "@/store/privacy-preferences-store";
+import { useLocationPreferencesQuery, usePrivacyPreferencesQuery, useUpdateLocationPreferencesMutation, useUpdatePrivacyPreferencesMutation } from "@/services/api/resources/profile";
 
 export default function FigmaPrivacyExperience() {
   const router = useRouter();
   const handleBack = () => router.replace("/(main)/profile");
-  const privacy = usePrivacyPreferencesStore();
-  const location = useLocationPreferencesStore();
-  useEffect(() => { void privacy.load(); if (!location.preferences) void location.loadPreferences(); }, []);
-  useFocusEffect(useCallback(() => { if (location.preferences) void location.loadPreferences(); }, [location.preferences, location.loadPreferences]));
-  const prefs = privacy.preferences;
-  const loc = location.preferences;
-  const error = privacy.error || location.error;
-  if (privacy.loading && !prefs || location.loading && !loc) return <View style={styles.root}><Header onBack={handleBack} /><View style={styles.center}><ActivityIndicator color={colors.brand} /></View></View>;
-  if (error && !prefs) return <View style={styles.root}><Header onBack={handleBack} /><View style={styles.center}><Text style={styles.error}>{error}</Text><Pressable onPress={() => { void privacy.load(); void location.loadPreferences(); }}><Text style={styles.retry}>Tentar novamente</Text></Pressable></View></View>;
+  const privacyQuery = usePrivacyPreferencesQuery();
+  const locationQuery = useLocationPreferencesQuery();
+  const privacyMutation = useUpdatePrivacyPreferencesMutation();
+  const locationMutation = useUpdateLocationPreferencesMutation();
+  const prefs = privacyQuery.data;
+  const loc = locationQuery.data;
+  const error = privacyQuery.error || locationQuery.error;
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  if ((privacyQuery.isLoading && !prefs) || (locationQuery.isLoading && !loc)) return <View style={styles.root}><Header onBack={handleBack} /><View style={styles.center}><ActivityIndicator color={colors.brand} /></View></View>;
+  if (error && !prefs) return <View style={styles.root}><Header onBack={handleBack} /><View style={styles.center}><Text style={styles.error}>{error instanceof Error ? error.message : "Não foi possível carregar as preferências."}</Text><Pressable onPress={() => { void privacyQuery.refetch(); void locationQuery.refetch(); }}><Text style={styles.retry}>Tentar novamente</Text></Pressable></View></View>;
   const showStatus = prefs?.showStatus ?? true;
   const showHistory = prefs?.showCheckinHistory ?? false;
   const showLocation = loc?.shareWithFriends ?? true;
-  const updateLocation = async () => { if (loc) await location.updatePreference("shareWithFriends", !showLocation); };
+  const updateLocation = async () => { if (!loc || locationMutation.isPending) return; try { setMutationError(null); await locationMutation.mutateAsync({ shareWithFriends: !showLocation }); } catch { setMutationError("Não foi possível salvar essa preferência."); } };
+  const updatePrivacy = async (key: "showStatus" | "showLastSeen" | "showCheckinHistory", value: boolean) => { if (privacyMutation.isPending) return; try { setMutationError(null); await privacyMutation.mutateAsync({ [key]: value }); } catch { setMutationError("Não foi possível salvar essa preferência."); } };
   return <View style={styles.root}><Header onBack={handleBack} /><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
     <Section title="Perfil" />
     <DisabledRow label="Perfil público" sub="Qualquer pessoa pode ver seu perfil" value="Em breve" />
@@ -32,8 +32,8 @@ export default function FigmaPrivacyExperience() {
     <Section title="Localização e Atividade" />
     <ToggleRow label="Compartilhar localização" sub="Mostrar onde você está para amigos" value={showLocation} onPress={() => void updateLocation()} />
     <DisabledRow label="Quem vê minha localização" value="Apenas amigos" />
-    <ToggleRow label="Histórico de lugares" sub="Mostrar no seu perfil onde você foi" value={showHistory} onPress={() => void privacy.update("showCheckinHistory", !showHistory)} />
-    <ToggleRow label="Status online" sub="Mostrar quando você está ativo no app" value={showStatus} onPress={() => void privacy.update("showStatus", !showStatus)} />
+    <ToggleRow label="Histórico de lugares" sub="Mostrar no seu perfil onde você foi" value={showHistory} onPress={() => void updatePrivacy("showCheckinHistory", !showHistory)} />
+    <ToggleRow label="Status online" sub="Mostrar quando você está ativo no app" value={showStatus} onPress={() => void updatePrivacy("showStatus", !showStatus)} />
     <Section title="Dados e Segurança" />
     <ActionRow label="Usuários bloqueados" value="Em breve" />
     <ActionRow label="Gerenciar dados pessoais" onPress={() => router.push({ pathname: "/(main)/edit-profile", params: { returnTo: "privacy" } })} />

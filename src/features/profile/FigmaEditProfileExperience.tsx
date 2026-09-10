@@ -4,7 +4,8 @@ import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { resolveBackendMediaUrl, updateMyUser, uploadMyAvatar } from "@/services/api";
+import { resolveBackendMediaUrl } from "@/services/api";
+import { useMeQuery, useUpdateProfileMutation, useUploadAvatarMutation } from "@/services/api/resources/profile";
 import { MAIN_TAB_BAR_HEIGHT } from "@/features/navigation/tabBarMetrics";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts } from "@/theme/tokens";
@@ -13,7 +14,9 @@ import { formatBrazilianPhone, formatBrazilianPhoneInput, normalizeCityWithUf, n
 const EDIT_PROFILE_BOTTOM_GAP = 24;
 
 export default function FigmaEditProfileExperience() {
-  const user = useUserStore((s) => s.user);
+  const legacyUser = useUserStore((s) => s.user);
+  const meQuery = useMeQuery();
+  const user = meQuery.data ?? legacyUser;
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const setUser = useUserStore((s) => s.setUser);
   const [name, setName] = useState(user?.name ?? "");
@@ -24,6 +27,8 @@ export default function FigmaEditProfileExperience() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const updateProfileMutation = useUpdateProfileMutation();
+  const uploadAvatarMutation = useUploadAvatarMutation();
   useEffect(() => { if (user) { setName(user.name ?? ""); setUsername(user.username ?? ""); setBio(user.bio ?? ""); setCity(user.city ?? ""); setPhone(formatBrazilianPhone(user.phone)); } }, [user]);
   if (!user) return null;
   const save = async () => {
@@ -37,7 +42,7 @@ export default function FigmaEditProfileExperience() {
     catch (validationError) { setError(validationError instanceof Error ? validationError.message : "Confira os dados informados."); return; }
     if (normalizedPhone && !/^\+?[0-9]{8,20}$/.test(normalizedPhone)) { setError("Digite um telefone válido."); return; }
     setSaving(true); setError("");
-    try { const updated = await updateMyUser({ name: value, username: normalizedUsername || null, bio: bio.trim(), city: normalizedCity, phone: normalizedPhone || null }); setUser(updated); router.replace("/(main)/profile"); }
+    try { const updated = await updateProfileMutation.mutateAsync({ name: value, username: normalizedUsername || null, bio: bio.trim(), city: normalizedCity, phone: normalizedPhone || null }); setUser(updated); router.replace("/(main)/profile"); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Não foi possível salvar as alterações."); }
     finally { setSaving(false); }
   };
@@ -50,7 +55,7 @@ export default function FigmaEditProfileExperience() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
     if (result.canceled || !result.assets[0]) return;
     setUploadingAvatar(true); setError("");
-    try { setUser(await uploadMyAvatar({ uri: result.assets[0].uri, fileName: result.assets[0].fileName, mimeType: result.assets[0].mimeType })); }
+    try { setUser(await uploadAvatarMutation.mutateAsync({ uri: result.assets[0].uri, fileName: result.assets[0].fileName, mimeType: result.assets[0].mimeType })); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Não foi possível atualizar sua foto."); }
     finally { setUploadingAvatar(false); }
   };

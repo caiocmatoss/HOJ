@@ -90,3 +90,19 @@ export async function clearSession(): Promise<void> {
   useUserStore.getState().clearAuth();
   queryClient.clear();
 }
+
+export async function apiClientWithMeta<T>(path: string, options: RequestOptions = {}): Promise<{ data: T; status: number; headers: Headers }> {
+  const authenticated = options.authenticated !== false;
+  const token = authenticated ? useUserStore.getState().accessToken : null;
+  const isMultipart = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const headers: Record<string, string> = { ...(options.body !== undefined && !isMultipart ? { "Content-Type": "application/json" } : {}), ...options.headers };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(`${API_URL}${path}`, { method: options.method ?? "GET", headers, body: options.body === undefined ? undefined : (isMultipart ? options.body as BodyInit : JSON.stringify(options.body)) });
+  const payload = await readPayload(response);
+  if (response.status === 401 && authenticated && options.retryOnUnauthorized !== false && !isAuthEndpoint(path)) {
+    const nextToken = await refreshSingleFlight().catch(() => null);
+    if (nextToken) return apiClientWithMeta<T>(path, { ...options, retryOnUnauthorized: false });
+  }
+  if (!response.ok) throw toApiError(response.status, payload);
+  return { data: payload as T, status: response.status, headers: response.headers };
+}

@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router as expoRouter, useLocalSearchParams } from "expo-router";
-import { useEffect, useState, type ComponentProps } from "react";
+import { type ComponentProps } from "react";
 import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
-import { getEvent, type ApiEvent } from "@/services/api";
+import { type ApiEvent } from "@/services/api";
+import { useEventQuery } from "@/services/api/resources/events";
 import { useLocationStore } from "@/store/location-store";
 import { colors, fonts, radii } from "@/theme/tokens";
 import { calculateDistance, formatDistance } from "@/utils/distance";
@@ -24,10 +25,13 @@ export default function EventDetailExperience() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : params.id ?? "";
   const { latitude, longitude } = useLocationStore();
-  const [event, setEvent] = useState<ApiEvent | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [reloadKey, setReloadKey] = useState(0);
-  useEffect(() => { let active = true; const load = async () => { if (!eventId) { setError("Evento inválido."); setLoading(false); return; } setLoading(true); setError(null); try { const result = await getEvent(eventId); if (active) setEvent(result); } catch { if (active) { setEvent(null); setError("Não foi possível carregar os detalhes do evento."); } } finally { if (active) setLoading(false); } }; void load(); return () => { active = false; }; }, [eventId, reloadKey]);
+  const eventQuery = useEventQuery(eventId);
+  const event = eventQuery.data ?? null;
+  const loading = eventQuery.isLoading;
+  const error = eventQuery.error ? "Não foi possível carregar os detalhes do evento." : null;
+
   if (loading) return <EventState loading title="Carregando evento" message="Estamos preparando as informações deste evento." />;
-  if (error || !event) return <EventState title="Não foi possível abrir o evento" message={error ?? "Evento não encontrado."} actionLabel={eventId ? "Tentar novamente" : undefined} onAction={eventId ? () => setReloadKey((v) => v + 1) : undefined} secondaryActionLabel="Voltar" onSecondaryAction={() => router.back()} tone="danger" />;
+  if (error || !event) return <EventState title="Não foi possível abrir o evento" message={error ?? "Evento não encontrado."} actionLabel={eventId ? "Tentar novamente" : undefined} onAction={eventId ? () => { void eventQuery.refetch(); } : undefined} secondaryActionLabel="Voltar" onSecondaryAction={() => router.back()} tone="danger" />;
 
   const venue = event.venue; const venueName = venue?.name ?? event.venueName; const price = formatPrice(event.price); const formattedDate = formatEventDate(event.date); const eventDistance = getEventDistance(event, venue, latitude, longitude);
   const venueCoordinates = venue && Number.isFinite(Number(venue.latitude)) && Number.isFinite(Number(venue.longitude));

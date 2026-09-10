@@ -1,6 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { EventSheet } from "@/components/home/figma/EventSheet";
 import { FigmaDarkMapWeb } from "@/components/home/figma/FigmaDarkMap.web";
@@ -13,7 +13,9 @@ import { VenueSheet } from "@/components/home/figma/VenueSheet";
 import { LiveMapContainer } from "@/components/home/LiveMapContainer";
 import { MapLocationButton } from "@/components/home/MapLocationButton";
 import { SearchThisAreaButton } from "@/components/home/SearchThisAreaButton";
-import { getEvents, getVenues, type ApiEvent, type ApiVenue } from "@/services/api";
+import { type ApiEvent, type ApiVenue } from "@/services/api";
+import { useVenuesQuery } from "@/services/api/resources/venues";
+import { useEventsQuery } from "@/services/api/resources/events";
 import { useLocationStore } from "@/store/location-store";
 import { usePresenceStore } from "@/store/presence-store";
 import { colors, fonts } from "@/theme/tokens";
@@ -25,8 +27,11 @@ import type { NearbyDiscoveryItem } from "@/components/home/NearbyDiscoveryCard"
 const slots = [[48,38],[60,52],[32,55],[72,45],[55,30],[42,65],[78,60],[25,40],[65,70],[50,72]] as const;
 export default function FigmaProductionHome() {
   const router = useRouter(); const { latitude, longitude, status: locationStatus } = useLocationStore(); const friendLocations = usePresenceStore((state) => state.friendLocations); const presenceStatuses = usePresenceStore((state) => state.statuses);
-  const [query, setQuery] = useState(""); const [filter, setFilter] = useState<HomeFilter>("now"); const [moved, setMoved] = useState(false); const [venues, setVenues] = useState<ApiVenue[]>([]); const [events, setEvents] = useState<ApiEvent[]>([]); const [selectedVenue, setSelectedVenue] = useState<ApiVenue | null>(null); const [selectedEvent, setSelectedEvent] = useState<ApiEvent | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => { setLoading(true); setError(null); try { const [v,e] = await Promise.all([getVenues(), getEvents()]); setVenues(v); setEvents(e); } catch (e) { setError(e instanceof Error ? e.message : "Não foi possível carregar a descoberta."); } finally { setLoading(false); } }, []); useEffect(() => { void load(); }, [load]);
+  const [query, setQuery] = useState(""); const [filter, setFilter] = useState<HomeFilter>("now"); const [moved, setMoved] = useState(false); const [selectedVenue, setSelectedVenue] = useState<ApiVenue | null>(null); const [selectedEvent, setSelectedEvent] = useState<ApiEvent | null>(null);
+  const venuesQuery = useVenuesQuery(); const eventsQuery = useEventsQuery();
+  const venues = venuesQuery.data?.items ?? []; const events = eventsQuery.data?.items ?? [];
+  const loading = venuesQuery.isLoading || eventsQuery.isLoading; const error = venuesQuery.error || eventsQuery.error ? "Não foi possível carregar a descoberta." : null;
+  const load = () => { void venuesQuery.refetch(); void eventsQuery.refetch(); };
   const nearbyFriends = Object.values(friendLocations).filter((friend) => presenceStatuses[friend.userId] === "ONLINE"); const friendsVisible = filter === "friends";
   const selectedVenueDistance = selectedVenue && latitude != null && longitude != null
     ? formatDistance(calculateDistance(latitude, longitude, Number(selectedVenue.latitude), Number(selectedVenue.longitude)))

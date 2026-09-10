@@ -3,10 +3,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { getCheckinHistory, getFriends, type ApiCheckin, type ApiFriend } from "@/services/api";
+import { getFriends, type ApiFriend } from "@/services/api";
+import { useCheckinHistoryQuery } from "@/services/api/resources/checkins";
+import { useFavoritesQuery } from "@/services/api/resources/favorites";
 import { logout as logoutRemote } from "@/services/api/auth";
 import { useChatStore } from "@/store/chat-store";
-import { useFavoriteStore } from "@/store/favorite-store";
+
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts } from "@/theme/tokens";
 import { resolveBackendMediaUrl } from "@/services/api";
@@ -16,21 +18,16 @@ export default function FigmaProfileExperience() {
   const legacyUser = useUserStore((s) => s.user);
   const meQuery = useMeQuery();
   const user = meQuery.data ?? legacyUser;
-  const favorites = useFavoriteStore((s) => s.favoriteVenues);
-  const loadFavorites = useFavoriteStore((s) => s.loadFavorites);
+  const favoritesQuery = useFavoritesQuery();
+  const historyQuery = useCheckinHistoryQuery();
+  const favorites = (favoritesQuery.data ?? []).map((item) => item.venue);
   const clearChats = useChatStore((s) => s.clearAllChats);
   const [friends, setFriends] = useState<ApiFriend[]>([]);
-  const [history, setHistory] = useState<ApiCheckin[]>([]);
+  const history = historyQuery.data ?? [];
   const [tab, setTab] = useState<"favoritos" | "historico">("favoritos");
-  const [loading, setLoading] = useState(true);
+  const loading = favoritesQuery.isLoading || historyQuery.isLoading;
 
-  useEffect(() => {
-    let active = true;
-    void Promise.all([loadFavorites(), getFriends().catch(() => []), getCheckinHistory().catch(() => [])]).then(([, loaded, loadedHistory]) => {
-      if (active) { setFriends(loaded); setHistory(loadedHistory); setLoading(false); }
-    });
-    return () => { active = false; };
-  }, [loadFavorites]);
+  useEffect(() => { let active = true; void getFriends().catch(() => []).then((loaded) => { if (active) setFriends(loaded); }); return () => { active = false; }; }, []);
 
   if (!user) return <View style={styles.page}><Text style={styles.emptyTitle}>Sua conta não está disponível</Text></View>;
   const name = user.name.trim() || "Usuário";

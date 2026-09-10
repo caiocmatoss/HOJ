@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNotificationCenterOverlay } from "@/features/navigation/NotificationCenterOverlayContext";
-import { getEvents, getVenues, type ApiEvent, type ApiVenue } from "@/services/api";
+import { type ApiEvent, type ApiVenue } from "@/services/api";
+import { useVenuesQuery } from "@/services/api/resources/venues";
+import { useEventsQuery } from "@/services/api/resources/events";
 import { useLocationStore } from "@/store/location-store";
 import { calculateDistance, formatDistance } from "@/utils/distance";
 import { getVenueOccupancyState } from "@/utils/venue-state";
@@ -15,9 +17,13 @@ const aliases: Record<string, string[]> = { Bar: ["bar"], Restaurante: ["restaur
 export default function FigmaExploreExperience() {
   const { openNotificationCenter } = useNotificationCenterOverlay();
   const latitude = useLocationStore((s) => s.latitude); const longitude = useLocationStore((s) => s.longitude);
-  const [query, setQuery] = useState(""); const [category, setCategory] = useState("Tudo"); const [venues, setVenues] = useState<ApiVenue[]>([]); const [events, setEvents] = useState<ApiEvent[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => { setLoading(true); setError(null); try { const [v, e] = await Promise.all([getVenues({ limit: 100, q: query.trim() || undefined }), getEvents()]); setVenues(v); setEvents(e); } catch { setError("Não foi possível carregar a descoberta."); } finally { setLoading(false); } }, [query]);
-  useEffect(() => { void load(); }, [load]);
+  const [query, setQuery] = useState(""); const [category, setCategory] = useState("Tudo");
+  const venuesQuery = useVenuesQuery({ limit: 100, q: query.trim() || undefined });
+  const eventsQuery = useEventsQuery();
+  const venues = venuesQuery.data?.items ?? []; const events = eventsQuery.data?.items ?? [];
+  const loading = venuesQuery.isLoading || eventsQuery.isLoading;
+  const error = venuesQuery.error || eventsQuery.error ? "Não foi possível carregar a descoberta." : null;
+  const load = () => { void venuesQuery.refetch(); void eventsQuery.refetch(); };
   const normalized = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   const matches = useCallback((value: string) => category === "Tudo" || aliases[category]?.some((a) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(a)) === true, [category]);
   const filteredVenues = useMemo(() => venues.filter((v) => (!normalized || [v.name, v.category, v.address].some((x) => x.toLowerCase().includes(normalized))) && matches(v.category)).sort((a, b) => distanceOf(a, latitude, longitude) - distanceOf(b, latitude, longitude)), [venues, normalized, matches, latitude, longitude]);

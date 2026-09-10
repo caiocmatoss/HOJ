@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { getEvents, type ApiEvent } from "@/services/api";
+import { type ApiEvent } from "@/services/api";
+import { useEventsQuery } from "@/services/api/resources/events";
 import { colors, fonts, radii } from "@/theme/tokens";
 
 const DATE_TABS = ["Agora", "Hoje", "Amanhã", "Fim de sem."] as const;
@@ -12,9 +13,11 @@ type DateTab = (typeof DATE_TABS)[number];
 const genreAliases: Record<string, string[]> = { Show: ["show", "musica", "concerto"], Festival: ["festival", "evento"], Balada: ["balada", "festa", "club"], Jazz: ["jazz"], Cinema: ["cinema", "filme"] };
 
 export default function EventsExperience() {
-  const [events, setEvents] = useState<ApiEvent[]>([]); const [dateTab, setDateTab] = useState<DateTab>("Agora"); const [genre, setGenre] = useState("Todos"); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => { setLoading(true); setError(null); try { setEvents(await getEvents()); } catch (e) { setError(e instanceof Error ? e.message : "Não foi possível carregar os eventos."); } finally { setLoading(false); } }, []);
-  useEffect(() => { void load(); }, [load]);
+  const eventsQuery = useEventsQuery();
+  const events = eventsQuery.data?.items ?? [];
+  const [dateTab, setDateTab] = useState<DateTab>("Agora"); const [genre, setGenre] = useState("Todos");
+  const loading = eventsQuery.isLoading; const error = eventsQuery.error ? "Não foi possível carregar os eventos." : null;
+  const load = () => { void eventsQuery.refetch(); };
   const filtered = useMemo(() => events.filter((event) => !isPast(event) && matchesDate(event, dateTab) && matchesGenre(event.category, genre)).sort(sortEvents), [events, dateTab, genre]);
   return <View style={styles.page}><ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}><Text style={styles.heading}>Eventos</Text><View style={styles.dateControl}>{DATE_TABS.map((tab) => <Pressable key={tab} onPress={() => setDateTab(tab)} style={[styles.dateTab, dateTab === tab && styles.dateTabActive]}><Text style={[styles.dateText, dateTab === tab && styles.dateTextActive]}>{tab}</Text></Pressable>)}</View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genreRow}>{GENRES.map((item) => <Pressable key={item} onPress={() => setGenre(item)} style={[styles.genreChip, genre === item && styles.genreChipActive]}><Text style={[styles.genreText, genre === item && styles.genreTextActive]}>{item}</Text></Pressable>)}</ScrollView>{loading ? <View style={styles.state}><ActivityIndicator color={colors.brand} /><Text style={styles.muted}>Carregando eventos…</Text></View> : error ? <Pressable onPress={() => void load()} style={styles.state}><Ionicons color={colors.brand} name="refresh-outline" size={22} /><Text style={styles.muted}>{error} Toque para tentar novamente.</Text></Pressable> : filtered.length === 0 ? <View style={styles.empty}><Ionicons color={colors.brand} name="calendar-outline" size={30} /><Text style={styles.emptyTitle}>Nenhum evento encontrado</Text><Text style={styles.muted}>Tente outra data ou categoria.</Text></View> : <View style={styles.list}>{filtered.map((event) => <EventCard key={event.id} event={event} />)}</View>}</ScrollView></View>;
 }

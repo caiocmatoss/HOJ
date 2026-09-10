@@ -23,9 +23,8 @@ import {
 import LocationTracker from "@/components/LocationTracker";
 import NotificationManager from "@/components/NotificationManager";
 
-import {
-  getCurrentUser,
-} from "@/services/api";
+import { restoreSession as restoreSessionApi } from "@/services/api/auth";
+import { QueryProvider } from "@/providers/query-provider";
 
 import {
   useUserStore,
@@ -62,11 +61,6 @@ export default function RootLayout() {
 
   const hasHydrated = useUserStore((state) => state.hasHydrated);
 
-  const setUser =
-    useUserStore(
-      (state) => state.setUser,
-    );
-
   const clearAuth =
     useUserStore(
       (state) => state.clearAuth,
@@ -90,41 +84,15 @@ export default function RootLayout() {
       return;
     }
 
-    const restoreSession =
-      async () => {
-        try {
-          const token =
-            useUserStore.getState()
-              .accessToken;
-
-          if (!token) {
-            if (mounted) {
-              setSessionReady(true);
-            }
-
-            return;
-          }
-
-          const currentUser =
-            await getCurrentUser();
-
-          if (!mounted) {
-            return;
-          }
-
-          setUser(currentUser);
-        } catch {
-          if (!mounted) {
-            return;
-          }
-
-          clearAuth();
-        } finally {
-          if (mounted) {
-            setSessionReady(true);
-          }
-        }
-      };
+    const restoreSession = async () => {
+      try {
+        await restoreSessionApi();
+      } catch {
+        clearAuth();
+      } finally {
+        if (mounted) setSessionReady(true);
+      }
+    };
 
     void restoreSession();
 
@@ -135,7 +103,6 @@ export default function RootLayout() {
   [
     hasHydrated,
     clearAuth,
-    setUser,
   ]);
 
   useEffect(() => {
@@ -238,7 +205,7 @@ export default function RootLayout() {
    *
    * Como o componente retorna null,
    * ele não adiciona nenhum elemento visual
-   * à interface.
+   * Ã  interface.
    */
 
   const isAuthenticated =
@@ -248,6 +215,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <QueryProvider>
       <StatusBar style="light" />
       <NotificationManager />
 
@@ -284,6 +252,7 @@ export default function RootLayout() {
           options={{ headerShown: false }}
         />
       </Stack>
+      </QueryProvider>
     </SafeAreaProvider>
   );
 }

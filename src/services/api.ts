@@ -1,6 +1,7 @@
 import { BACKEND_URL } from "@/config/backend";
 import { useUserStore } from "@/store/user-store";
 import { disconnectSocket } from "@/services/socket";
+import { apiClient as centralApiClient } from "@/services/api/client";
 import { Platform } from "react-native";
 
 export const API_URL = BACKEND_URL;
@@ -395,64 +396,12 @@ type ApiListResponse<T> =
       count?: number;
     };
 
-export async function apiRequest<T>(
-  path: string,
-  options: ApiRequestOptions = {},
-): Promise<T> {
-  const {
-    method = "GET",
-    body,
-    authenticated = true,
-  } = options;
-
-  const token = authenticated
-    ? useUserStore.getState().accessToken
-    : null;
-
-  const response = await fetch(
-    `${API_URL}${path}`,
-    {
-      method,
-
-      headers: {
-        "Content-Type": "application/json",
-
-        ...(token
-          ? {
-              Authorization: `Bearer ${token}`,
-            }
-          : {}),
-      },
-
-      body:
-        body !== undefined
-          ? JSON.stringify(body)
-          : undefined,
-    },
-  );
-
-  const data = await response
-    .json()
-    .catch(() => null);
-
-  if (!response.ok) {
-    if (response.status === 401 && authenticated) {
-      invalidateExpiredSession();
-    }
-
-    const message = Array.isArray(
-      data?.message,
-    )
-      ? data.message.join(", ")
-      : data?.message;
-
-    throw new Error(
-      message ??
-        `Erro HTTP ${response.status}`,
-    );
-  }
-
-  return data as T;
+export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  return centralApiClient<T>(path, {
+    method: (options.method ?? "GET") as "GET" | "POST" | "PATCH" | "DELETE" | "PUT",
+    body: options.body,
+    authenticated: options.authenticated,
+  });
 }
 
 export function resolveBackendMediaUrl(value: string | null | undefined): string | null {

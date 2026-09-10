@@ -15,7 +15,7 @@ import {
 
 import { BrandMark } from "@/components/ui/BrandMark";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
-import { login } from "@/services/api";
+import { login } from "@/services/api/auth";
 import { connectSocket } from "@/services/socket";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii, shadows } from "@/theme/tokens";
@@ -28,7 +28,6 @@ export default function LoginExperience() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<LoginErrors>({});
-  const setAuth = useUserStore((state) => state.setAuth);
 
   const clearError = (field: keyof LoginErrors) => {
     if (!errors[field] && !errors.general) return;
@@ -73,7 +72,6 @@ export default function LoginExperience() {
         throw new Error("Resposta de login inválida.");
       }
 
-      setAuth(result.user, result.accessToken);
       connectSocket();
       router.replace("/(main)/home");
     } catch (error) {

@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 
-import { login, register } from "@/services/api";
+import { login, register } from "@/services/api/auth";
 import { connectSocket } from "@/services/socket";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts } from "@/theme/tokens";
@@ -39,7 +39,6 @@ export default function FigmaAuthExperience({ mode }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
-  const setAuth = useUserStore((state) => state.setAuth);
 
   const clearError = (field: keyof Errors) => {
     if (!errors[field] && !errors.general) return;
@@ -65,7 +64,6 @@ export default function FigmaAuthExperience({ mode }: Props) {
         ? await login(normalizedEmail, password)
         : await register(name.trim(), normalizedEmail, password);
       if (!result.user || !result.accessToken) throw new Error("Não foi possível concluir a autenticação.");
-      setAuth(result.user, result.accessToken);
       connectSocket();
       router.replace("/(main)/home");
     } catch (error) {

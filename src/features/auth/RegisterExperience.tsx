@@ -15,7 +15,7 @@ import {
 
 import { BrandMark } from "@/components/ui/BrandMark";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
-import { register } from "@/services/api";
+import { register } from "@/services/api/auth";
 import { connectSocket } from "@/services/socket";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii, shadows } from "@/theme/tokens";
@@ -33,7 +33,6 @@ export default function RegisterExperience() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<RegisterErrors>({});
-  const setAuth = useUserStore((state) => state.setAuth);
 
   const clearError = (field: keyof RegisterErrors) => {
     if (!errors[field] && !errors.general) return;
@@ -95,7 +94,6 @@ export default function RegisterExperience() {
         throw new Error("Resposta de cadastro inválida.");
       }
 
-      setAuth(result.user, result.accessToken);
       connectSocket();
       router.replace("/(main)/home");
     } catch (error) {

@@ -20,7 +20,7 @@ import {
   requestNotificationPermission,
   type NotificationPermissionStatus,
 } from "@/services/notifications";
-import { disconnectSocket } from "@/services/socket";
+import { logout as logoutRemote } from "@/services/api/auth";
 import { useChatStore } from "@/store/chat-store";
 import { useFavoriteStore } from "@/store/favorite-store";
 import { useGroupStore } from "@/store/group-store";
@@ -34,7 +34,6 @@ type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
 export default function ProfileExperience() {
   const user = useUserStore((state) => state.user);
-  const logout = useUserStore((state) => state.logout);
 
   const groups = useGroupStore((state) => state.groups);
   const loadGroups = useGroupStore((state) => state.loadGroups);
@@ -141,11 +140,10 @@ export default function ProfileExperience() {
     }
   };
 
-  const handleLogout = () => {
-    disconnectSocket();
+  const handleLogout = async () => {
+    await logoutRemote();
     clearAllChats();
     clearNotifications();
-    logout();
     router.replace("/(auth)/login");
   };
 

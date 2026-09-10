@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { getCheckinHistory, getFriends, type ApiCheckin, type ApiFriend } from "@/services/api";
-import { disconnectSocket } from "@/services/socket";
+import { logout as logoutRemote } from "@/services/api/auth";
 import { useChatStore } from "@/store/chat-store";
 import { useFavoriteStore } from "@/store/favorite-store";
 import { useUserStore } from "@/store/user-store";
@@ -13,7 +13,6 @@ import { resolveBackendMediaUrl } from "@/services/api";
 
 export default function FigmaProfileExperience() {
   const user = useUserStore((s) => s.user);
-  const logout = useUserStore((s) => s.logout);
   const favorites = useFavoriteStore((s) => s.favoriteVenues);
   const loadFavorites = useFavoriteStore((s) => s.loadFavorites);
   const clearChats = useChatStore((s) => s.clearAllChats);
@@ -33,7 +32,7 @@ export default function FigmaProfileExperience() {
   if (!user) return <View style={styles.page}><Text style={styles.emptyTitle}>Sua conta não está disponível</Text></View>;
   const name = user.name.trim() || "Usuário";
   const placesCount = new Set(history.map((item) => item.venueId)).size;
-  const handleLogout = () => { disconnectSocket(); clearChats(); logout(); router.replace("/(auth)/login"); };
+  const handleLogout = async () => { await logoutRemote(); clearChats(); router.replace("/(auth)/login"); };
 
   return <ScrollView style={styles.page} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
     <View style={styles.hero}>

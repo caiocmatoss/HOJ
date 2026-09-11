@@ -17,13 +17,17 @@ import {
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { ScreenHeading } from "@/components/ui/ScreenHeading";
-import { getFriends, getVenues, resolveBackendMediaUrl, sendGroupInvite, type ApiFriend, type ApiVenue } from "@/services/api";
-import { useGroupStore } from "@/store/group-store";
+import { getVenues, resolveBackendMediaUrl, type ApiVenue } from "@/services/api";
+import { useFriendsQuery } from "@/services/api/resources/friends";
+import { useCreateGroupMutation } from "@/services/api/resources/groups";
+import { useInviteMutation } from "@/services/api/resources/invites";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
 
 export default function CreateGroupExperience() {
-  const createGroup = useGroupStore((state) => state.createGroup);
+  const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
+  const createGroupMutation = useCreateGroupMutation();
+  const inviteMutation = useInviteMutation("send");
   const user = useUserStore((state) => state.user);
 
   const [name, setName] = useState("");
@@ -35,48 +39,12 @@ export default function CreateGroupExperience() {
   const [venuesError, setVenuesError] = useState<string | null>(null);
   const [venueQuery, setVenueQuery] = useState("");
   const [venuePickerOpen, setVenuePickerOpen] = useState(false);
-  const [friends, setFriends] = useState<ApiFriend[]>([]);
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
-  const [loadingFriends, setLoadingFriends] = useState(true);
-  const [friendsError, setFriendsError] = useState<string | null>(null);
-
-  const loadVenues = useCallback(async () => {
-    setLoadingVenues(true);
-    setVenuesError(null);
-
-    try {
-      setAvailableVenues(await getVenues());
-    } catch (requestError) {
-      setVenuesError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Não foi possível carregar os locais.",
-      );
-    } finally {
-      setLoadingVenues(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadVenues();
-  }, [loadVenues]);
-
-  const loadFriends = useCallback(async () => {
-    setLoadingFriends(true);
-    setFriendsError(null);
-    try {
-      setFriends(await getFriends());
-    } catch (requestError) {
-      setFriendsError(requestError instanceof Error ? requestError.message : "Não foi possível carregar seus amigos.");
-    } finally {
-      setLoadingFriends(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadFriends();
-  }, [loadFriends]);
-
+  const loadVenues = useCallback(async () => { setLoadingVenues(true); setVenuesError(null); try { setAvailableVenues(await getVenues()); } catch (e) { setVenuesError(e instanceof Error ? e.message : "Não foi possível carregar os locais."); } finally { setLoadingVenues(false); } }, []);
+  useEffect(() => { void loadVenues(); }, [loadVenues]);
+  const friends = friendsQuery.data?.items ?? [];
+  const loadingFriends = friendsQuery.isLoading;
+  const friendsError = friendsQuery.error instanceof Error ? friendsQuery.error.message : friendsQuery.error ? "Não foi possível carregar seus amigos." : null;
   const filteredVenues = useMemo(() => {
     const normalized = venueQuery.trim().toLocaleLowerCase("pt-BR");
     if (!normalized) return availableVenues;
@@ -123,8 +91,8 @@ export default function CreateGroupExperience() {
     setSaving(true);
 
     try {
-      const created = await createGroup(trimmedName, selectedVenueId);
-      const inviteResults = await Promise.allSettled(selectedFriendIds.map((friendId) => sendGroupInvite(created.id, friendId)));
+      const created = await createGroupMutation.mutateAsync({ name: trimmedName, venueId: selectedVenueId });
+      const inviteResults = await Promise.allSettled(selectedFriendIds.map((friendId) => inviteMutation.mutateAsync({ groupId: created.id, receiverId: friendId })));
       const failedInvites = inviteResults.filter((result) => result.status === "rejected").length;
       if (failedInvites > 0) {
         setError(failedInvites === selectedFriendIds.length ? "Grupo criado, mas os convites não puderam ser enviados." : "Grupo criado. Alguns convites não puderam ser enviados.");
@@ -375,7 +343,7 @@ export default function CreateGroupExperience() {
           {loadingFriends ? (
             <View style={styles.inlineState}><ActivityIndicator color={colors.brand} size="small" /><Text style={styles.inlineStateTitle}>Carregando amigos</Text></View>
           ) : friendsError ? (
-            <View style={styles.errorState}><Ionicons color={colors.danger} name="cloud-offline-outline" size={20} /><Text style={styles.errorStateText}>{friendsError}</Text><Pressable accessibilityRole="button" onPress={() => void loadFriends()}><Text style={styles.retryText}>Tentar</Text></Pressable></View>
+            <View style={styles.errorState}><Ionicons color={colors.danger} name="cloud-offline-outline" size={20} /><Text style={styles.errorStateText}>{friendsError}</Text><Pressable accessibilityRole="button" onPress={() => void friendsQuery.refetch()}><Text style={styles.retryText}>Tentar</Text></Pressable></View>
           ) : friends.length === 0 ? (
             <View style={styles.inlineState}><Text style={styles.inlineStateText}>Você ainda não adicionou amigos.</Text></View>
           ) : (

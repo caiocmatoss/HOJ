@@ -10,6 +10,7 @@ import { MAIN_TAB_BAR_HEIGHT } from "@/features/navigation/tabBarMetrics";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts } from "@/theme/tokens";
 import { formatBrazilianPhone, formatBrazilianPhoneInput, normalizeCityWithUf, normalizePhone } from "@/utils/profileFormat";
+import { getProfileCover, setProfileCover } from "@/services/profile/profile-cover-storage";
 
 const EDIT_PROFILE_BOTTOM_GAP = 24;
 
@@ -27,8 +28,10 @@ export default function FigmaEditProfileExperience() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [coverUri, setCoverUri] = useState<string | null>(null);
   const updateProfileMutation = useUpdateProfileMutation();
   const uploadAvatarMutation = useUploadAvatarMutation();
+  useEffect(() => { if (user?.id) void getProfileCover(user.id).then(setCoverUri); }, [user?.id]);
   useEffect(() => { if (user) { setName(user.name ?? ""); setUsername(user.username ?? ""); setBio(user.bio ?? ""); setCity(user.city ?? ""); setPhone(formatBrazilianPhone(user.phone)); } }, [user]);
   if (!user) return null;
   const save = async () => {
@@ -55,14 +58,55 @@ export default function FigmaEditProfileExperience() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
     if (result.canceled || !result.assets[0]) return;
     setUploadingAvatar(true); setError("");
-    try { setUser(await uploadAvatarMutation.mutateAsync({ uri: result.assets[0].uri, fileName: result.assets[0].fileName, mimeType: result.assets[0].mimeType })); }
+    try {
+      const asset = result.assets[0];
+      setUser(await uploadAvatarMutation.mutateAsync({
+        uri: asset.uri,
+        fileName: asset.fileName ?? asset.file?.name ?? null,
+        mimeType: asset.mimeType ?? asset.file?.type ?? null,
+        file: asset.file ?? null,
+      }));
+    }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Não foi possível atualizar sua foto."); }
     finally { setUploadingAvatar(false); }
+  };
+  const pickCover = async () => {
+    if (!user) return;
+    if (Platform.OS !== "web") {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) { setError("Permissão para acessar suas fotos não foi concedida."); return; }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [3, 1], quality: 0.85 });
+    if (result.canceled || !result.assets[0]) return;
+    try {
+      const asset = result.assets[0];
+      const persistedUri = await setProfileCover(user.id, {
+        uri: asset.uri,
+        file: asset.file ?? null,
+      });
+      setCoverUri(persistedUri);
+      setError("");
+    }
+    catch { setError("Não foi possível atualizar sua capa."); }
   };
   return <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
     <View style={styles.header}><Pressable accessibilityLabel="Voltar" disabled={saving} onPress={() => router.replace(returnTo === "privacy" ? "/(main)/privacy" : "/(main)/profile")} style={styles.back}><Ionicons name="arrow-back" size={20} color={colors.brand} /></Pressable><Text style={styles.headerTitle}>Editar perfil</Text></View>
     <ScrollView contentContainerStyle={[styles.content, { paddingBottom: MAIN_TAB_BAR_HEIGHT + EDIT_PROFILE_BOTTOM_GAP }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <View style={styles.avatarSection}><Avatar name={name || user.name} uri={resolveBackendMediaUrl(user.avatar)} uploading={uploadingAvatar} onPress={pickAvatar} /><Pressable disabled={uploadingAvatar} onPress={() => void pickAvatar()}><Text style={styles.changePhoto}>Trocar foto</Text></Pressable></View>
+      <View style={styles.avatarSection}>
+        <Avatar
+          name={name || user.name}
+          uri={resolveBackendMediaUrl(user.avatar)}
+          uploading={uploadingAvatar}
+          onPress={pickAvatar}
+        />
+        <Pressable disabled={uploadingAvatar} onPress={() => void pickAvatar()}>
+          <Text style={styles.changePhoto}>Trocar foto</Text>
+        </Pressable>
+        <Pressable onPress={() => void pickCover()} style={styles.coverAction}>
+          <Ionicons name="image-outline" size={15} color={colors.brand} />
+          <Text style={styles.coverActionText}>{coverUri ? "Alterar capa" : "Adicionar capa"}</Text>
+        </Pressable>
+      </View>
       <SectionTitle>Informações pessoais</SectionTitle>
       <Field label="Nome completo" value={name} onChangeText={(v) => { setName(v); setError(""); }} placeholder="Seu nome" />
       <Field label="Nome de usuário" value={username ? `@${username.replace(/^@+/, "")}` : ""} onChangeText={(v) => { setUsername(v); setError(""); }} placeholder="@username" autoCapitalize="none" />
@@ -76,7 +120,7 @@ export default function FigmaEditProfileExperience() {
   </KeyboardAvoidingView>;
 }
 
-function Avatar({ name, uri, uploading, onPress }: { name: string; uri?: string | null; uploading: boolean; onPress: () => void }) { const content = uri ? <View style={styles.avatarBorder}><Image source={{ uri }} style={styles.avatarImage} /></View> : <LinearGradient colors={[colors.brand, colors.brandSecondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.avatar}><Text style={styles.avatarInitial}>{name.charAt(0).toUpperCase()}</Text></LinearGradient>; return <View style={styles.avatarWrap}><Pressable disabled={uploading} onPress={onPress}>{content}</Pressable><Pressable disabled={uploading} onPress={onPress} style={styles.camera}><Ionicons name="camera" size={14} color={colors.background} /></Pressable>{uploading ? <View style={styles.avatarLoading}><ActivityIndicator color={colors.background} size="small" /></View> : null}</View>; }
+function Avatar({ name, uri, uploading, onPress }: { name: string; uri?: string | null; uploading: boolean; onPress: () => void }) { const [failed, setFailed] = useState(false); useEffect(() => { setFailed(false); }, [uri]); const content = uri && !failed ? <View style={styles.avatarBorder}><Image onError={() => setFailed(true)} source={{ uri }} style={styles.avatarImage} /></View> : <LinearGradient colors={[colors.brand, colors.brandSecondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.avatar}><Text style={styles.avatarInitial}>{name.charAt(0).toUpperCase()}</Text></LinearGradient>; return <View style={styles.avatarWrap}><Pressable disabled={uploading} onPress={onPress}>{content}</Pressable><Pressable disabled={uploading} onPress={onPress} style={styles.camera}><Ionicons name="camera" size={14} color={colors.background} /></Pressable>{uploading ? <View style={styles.avatarLoading}><ActivityIndicator color={colors.background} size="small" /></View> : null}</View>; }
 function SectionTitle({ children }: { children: string }) { return <Text style={styles.sectionTitle}>{children}</Text>; }
 function Field({ label, value, onChangeText, placeholder, multiline, keyboardType, autoCapitalize }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; multiline?: boolean; keyboardType?: "phone-pad"; autoCapitalize?: "none" }) { return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput autoCapitalize={autoCapitalize} keyboardType={keyboardType} multiline={multiline} numberOfLines={multiline ? 3 : 1} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.textMuted} style={[styles.input, multiline && styles.bio]} textAlignVertical={multiline ? "top" : "center"} value={value} /></View>; }
 
@@ -86,7 +130,7 @@ const styles = StyleSheet.create({
   back: { width: 20, height: 20, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: colors.text, fontFamily: fonts.display, fontSize: 18, fontWeight: "700" },
   content: { paddingHorizontal: 20 },
-  avatarSection: { alignItems: "center", paddingTop: 28, paddingBottom: 24 },
+  avatarSection: { alignItems: "center", paddingTop: 20, paddingBottom: 24 },
   avatar: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: colors.elevated },
   avatarBorder: { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: colors.elevated, overflow: "hidden" },
   avatarImage: { width: "100%", height: "100%", backgroundColor: colors.surface },
@@ -95,6 +139,8 @@ const styles = StyleSheet.create({
   camera: { position: "absolute", right: 0, bottom: 0, width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.brand, borderWidth: 2, borderColor: colors.background },
   avatarLoading: { position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" },
   changePhoto: { color: colors.brand, fontFamily: fonts.semibold, fontSize: 13, marginTop: 10 },
+  coverAction: { alignItems: "center", flexDirection: "row", gap: 6, marginTop: 12 },
+  coverActionText: { color: colors.textSecondary, fontFamily: fonts.semibold, fontSize: 12 },
   sectionTitle: { color: colors.textMuted, fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1.1, marginTop: 20, marginBottom: 8, textTransform: "uppercase" },
   field: { gap: 5, marginBottom: 10 },
   label: { color: colors.textSecondary, fontFamily: fonts.medium, fontSize: 12, letterSpacing: 0.36 },

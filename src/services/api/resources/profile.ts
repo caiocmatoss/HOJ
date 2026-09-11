@@ -46,7 +46,12 @@ export type UpdateProfileInput = {
   bio?: string | null;
 };
 
-export type AvatarAsset = { uri: string; fileName?: string | null; mimeType?: string | null };
+export type AvatarAsset = {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  file?: Blob | null;
+};
 
 export async function getMe(): Promise<SelfUser> {
   return apiClient<SelfUser>("/users/me");
@@ -56,14 +61,51 @@ export async function updateProfile(body: UpdateProfileInput): Promise<SelfUser>
   return apiClient<SelfUser>("/users/me", { method: "PATCH", body });
 }
 
+function fileNameForAvatar(asset: AvatarAsset, mimeType: string): string {
+  if (asset.fileName?.trim()) return asset.fileName;
+
+  const extension =
+    mimeType === "image/png"
+      ? "png"
+      : mimeType === "image/webp"
+        ? "webp"
+        : "jpg";
+
+  return `avatar.${extension}`;
+}
+
 async function toFormData(asset: AvatarAsset): Promise<FormData> {
   const form = new FormData();
+
   if (Platform.OS === "web") {
-    const blob = await fetch(asset.uri).then((response) => response.blob());
-    form.append("file", new File([blob], asset.fileName ?? "avatar", { type: asset.mimeType ?? blob.type }));
+    let blob: Blob;
+
+    if (asset.file) {
+      blob = asset.file;
+    } else {
+      const response = await fetch(asset.uri);
+
+      if (!response.ok) {
+        throw new Error("Não foi possível preparar a imagem selecionada.");
+      }
+
+      blob = await response.blob();
+    }
+
+    const mimeType = asset.mimeType || blob.type || "image/jpeg";
+    form.append("file", blob, fileNameForAvatar(asset, mimeType));
   } else {
-    form.append("file", { uri: asset.uri, name: asset.fileName ?? "avatar", type: asset.mimeType ?? "image/jpeg" } as unknown as Blob);
+    const mimeType = asset.mimeType ?? "image/jpeg";
+    form.append(
+      "file",
+      {
+        uri: asset.uri,
+        name: fileNameForAvatar(asset, mimeType),
+        type: mimeType,
+      } as unknown as Blob,
+    );
   }
+
   return form;
 }
 

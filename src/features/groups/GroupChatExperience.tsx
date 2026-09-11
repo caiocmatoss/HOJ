@@ -15,17 +15,17 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { getGroup, getGroupMessages, type ApiGroupMessage } from "@/services/api";
+import { getGroupMessages, type ApiGroupMessage } from "@/services/api";
+import { useGroupQuery } from "@/services/api/resources/groups";
 import { joinGroup, leaveGroup, onNewMessage, sendSocketMessage } from "@/services/socket";
 import { useChatStore, type ChatMessage } from "@/store/chat-store";
-import { useGroupStore } from "@/store/group-store";
+
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
 import { MAIN_TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
 
 const CHAT_COMPOSER_TAB_GAP = 8;
 import Svg, { Path } from "react-native-svg";
-import type { Group } from "@/types/group";
 
 function normalizeMessage(message: ApiGroupMessage): ChatMessage {
   return {
@@ -43,16 +43,6 @@ function normalizeMessage(message: ApiGroupMessage): ChatMessage {
         }
       : undefined,
     userId: message.userId,
-  };
-}
-
-function normalizeGroup(response: Awaited<ReturnType<typeof getGroup>>): Group {
-  return {
-    creatorId: response.creatorId,
-    id: response.id,
-    members: response.members?.map((member) => member.userId) ?? [],
-    name: response.name,
-    venueId: response.venueId,
   };
 }
 
@@ -88,14 +78,14 @@ export default function GroupChatExperience() {
 
   const user = useUserStore((state) => state.user);
   const accessToken = useUserStore((state) => state.accessToken);
-  const groups = useGroupStore((state) => state.groups);
+  const groupQuery = useGroupQuery(groupId);
   const storedMessages = useChatStore((state) => state.messages);
   const setMessages = useChatStore((state) => state.setMessages);
   const addMessage = useChatStore((state) => state.addMessage);
 
-  const [remoteGroup, setRemoteGroup] = useState<Group | null>(null);
+
   const [text, setText] = useState("");
-  const [loadingGroup, setLoadingGroup] = useState(true);
+  const loadingGroup = groupQuery.isLoading;
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -103,11 +93,7 @@ export default function GroupChatExperience() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const processedMessageIds = useRef(new Set<string>());
 
-  const storeGroup = useMemo(
-    () => groups.find((item) => item.id === groupId),
-    [groupId, groups],
-  );
-  const group = storeGroup ?? remoteGroup;
+  const group = groupQuery.data ?? null;
   const messages = useMemo(
     () => (groupId ? storedMessages[groupId] ?? [] : []),
     [groupId, storedMessages],
@@ -117,42 +103,6 @@ export default function GroupChatExperience() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated }));
   }, []);
 
-  useEffect(() => {
-    if (!groupId) {
-      setLoadingGroup(false);
-      return;
-    }
-
-    if (storeGroup) {
-      setRemoteGroup(null);
-      setLoadingGroup(false);
-      return;
-    }
-
-    let cancelled = false;
-    setLoadingGroup(true);
-
-    getGroup(groupId)
-      .then((response) => {
-        if (!cancelled) setRemoteGroup(normalizeGroup(response));
-      })
-      .catch((requestError: unknown) => {
-        if (!cancelled) {
-          setError(
-            requestError instanceof Error
-              ? requestError.message
-              : "Não foi possível carregar o grupo.",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingGroup(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [groupId, storeGroup]);
 
   useEffect(() => {
     if (!groupId || !accessToken) {
@@ -300,7 +250,7 @@ export default function GroupChatExperience() {
               <Text style={styles.headerStatus}>
                 {connecting
                   ? "Conectando…"
-                  : `${group.members.length} ${group.members.length === 1 ? "membro" : "membros"}`}
+                  : `${(group.members ?? []).length} ${(group.members ?? []).length === 1 ? "membro" : "membros"}`}
               </Text>
             </View>
 

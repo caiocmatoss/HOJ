@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -14,7 +14,7 @@ import {
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { ScreenHeading } from "@/components/ui/ScreenHeading";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { getFriends, removeFriend, type ApiFriend } from "@/services/api";
+import { useFriendsQuery, useFriendMutation, type Friend } from "@/services/api/resources/friends";
 import { getPresence } from "@/services/socket";
 import { usePresenceStore } from "@/store/presence-store";
 import { colors, fonts, radii, shadows } from "@/theme/tokens";
@@ -54,59 +54,18 @@ export default function FriendDetailExperience() {
   const visible = usePresenceStore((state) => state.visible);
   const removePresenceUser = usePresenceStore((state) => state.removeUser);
 
-  const [friend, setFriend] = useState<ApiFriend | null>(null);
-  const [loading, setLoading] = useState(true);
+  const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
+  const removeMutation = useFriendMutation("remove");
+  const friend = friendsQuery.data?.items.find((item) => item.id === friendId) ?? null;
+  const loading = friendsQuery.isLoading;
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const error = friendsQuery.error instanceof Error ? friendsQuery.error.message : friendsQuery.error ? "Não foi possível carregar este amigo." : null;
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
 
-  const loadFriend = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    if (!friendId) {
-      setFriend(null);
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const result = await getFriends();
-      setFriend(result.find((item) => item.id === friendId) ?? null);
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Não foi possível carregar este amigo.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [friendId]);
-
-  useEffect(() => {
-    let active = true;
-
-    const initialize = async () => {
-      await Promise.allSettled([loadFriend(), getPresence()]);
-      if (!active) return;
-    };
-
-    void initialize();
-
-    return () => {
-      active = false;
-    };
-  }, [loadFriend]);
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    await Promise.allSettled([loadFriend(), getPresence()]);
-    setRefreshing(false);
-  }, [loadFriend]);
-
+  const loadFriend = useCallback(async () => { await friendsQuery.refetch(); }, [friendsQuery.refetch]);
+  const removeFriend = async () => { if (!friendId) return; await removeMutation.mutateAsync(friendId); };
   const location = friendId ? friendLocations[friendId] : undefined;
   const distance = useMemo(
     () => formatDistance(location?.distanceKm, location?.distanceMeters),
@@ -126,7 +85,7 @@ export default function FriendDetailExperience() {
     setRemoveError(null);
 
     try {
-      await removeFriend(friend.id);
+      await removeMutation.mutateAsync(friend.id);
       removePresenceUser(friend.id);
       router.replace("/(main)/friends");
     } catch (requestError) {
@@ -202,7 +161,7 @@ export default function FriendDetailExperience() {
         refreshControl={
           <RefreshControl
             colors={[colors.brand]}
-            onRefresh={() => void refresh()}
+            onRefresh={() => void loadFriend()}
             refreshing={refreshing}
             tintColor={colors.brand}
           />
@@ -244,7 +203,7 @@ export default function FriendDetailExperience() {
             </View>
             {friend.bio?.trim() ? <Text style={styles.bio}>{friend.bio.trim()}</Text> : null}
             <Text numberOfLines={1} style={styles.email}>
-              {friend.email}
+
             </Text>
 
             <Pressable

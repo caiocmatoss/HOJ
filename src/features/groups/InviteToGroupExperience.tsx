@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -12,12 +12,11 @@ import {
 } from "react-native";
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
-import { ScreenHeading } from "@/components/ui/ScreenHeading";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { getFriends, type ApiFriend } from "@/services/api";
-import { useGroupStore } from "@/store/group-store";
-import { useInviteStore } from "@/store/invite-store";
 import { usePresenceStore } from "@/store/presence-store";
+import { useGroupMembersQuery, useGroupQuery } from "@/services/api/resources/groups";
+import { useFriendsQuery } from "@/services/api/resources/friends";
+import { useInviteMutation, useSentInvitesQuery } from "@/services/api/resources/invites";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii, shadows } from "@/theme/tokens";
 
@@ -27,58 +26,26 @@ export default function InviteToGroupExperience() {
   const { groupId } = useLocalSearchParams<{ groupId?: string | string[] }>();
   const resolvedGroupId = Array.isArray(groupId) ? groupId[0] : groupId;
 
-  const groups = useGroupStore((state) => state.groups);
-  const receivedInvites = useInviteStore((state) => state.invites);
-  const sentInvites = useInviteStore((state) => state.sentInvites);
-  const loadSentInvites = useInviteStore((state) => state.loadSentInvites);
-  const sendInvite = useInviteStore((state) => state.sendInvite);
+  const groupQuery = useGroupQuery(resolvedGroupId);
+  const membersQuery = useGroupMembersQuery(resolvedGroupId, { page: 1, limit: 100 });
+  const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
+  const sentInvitesQuery = useSentInvitesQuery({ page: 1, limit: 100 });
+  const inviteMutation = useInviteMutation("send");
+  const group = groupQuery.data ?? null;
+  const receivedInvites: never[] = [];
+  const sentInvites = sentInvitesQuery.data?.items ?? [];
+  const friends = friendsQuery.data?.items ?? [];
   const user = useUserStore((state) => state.user);
   const presenceStatuses = usePresenceStore((state) => state.statuses);
 
-  const [friends, setFriends] = useState<ApiFriend[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dataError, setDataError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sentUserIds, setSentUserIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
 
-  const group = groups.find((item) => item.id === resolvedGroupId);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setDataError(null);
-
-    const [friendsResult, invitesResult] = await Promise.allSettled([
-      getFriends(),
-      loadSentInvites(),
-    ]);
-
-    if (friendsResult.status === "fulfilled") {
-      setFriends(friendsResult.value);
-    }
-
-    if (friendsResult.status === "rejected" || invitesResult.status === "rejected") {
-      const failure =
-        friendsResult.status === "rejected"
-          ? friendsResult.reason
-          : invitesResult.status === "rejected"
-            ? invitesResult.reason
-            : undefined;
-      setDataError(
-        failure instanceof Error
-          ? failure.message
-          : "Não foi possível carregar seus amigos e convites enviados.",
-      );
-    }
-
-    setLoading(false);
-  }, [loadSentInvites]);
-
-  useEffect(() => {
-    if (resolvedGroupId) void loadData();
-  }, [loadData, resolvedGroupId]);
+  const loading = groupQuery.isLoading || friendsQuery.isLoading || sentInvitesQuery.isLoading || membersQuery.isLoading;
+  const dataError = [groupQuery, friendsQuery, sentInvitesQuery, membersQuery].some((q) => Boolean(q.error)) ? "Não foi possível carregar seus amigos e convites enviados." : null;
 
   const pendingUserIds = useMemo(() => {
     if (!resolvedGroupId) return new Set<string>();
@@ -86,9 +53,9 @@ export default function InviteToGroupExperience() {
     return new Set(
       [...receivedInvites, ...sentInvites]
         .filter(
-          (invite) => invite.groupId === resolvedGroupId && invite.status === "pending",
+          (invite) => invite.groupId === resolvedGroupId && invite.status === "PENDING",
         )
-        .map((invite) => invite.toUserId),
+        .map((invite) => invite.receiverId),
     );
   }, [receivedInvites, resolvedGroupId, sentInvites]);
 
@@ -115,7 +82,7 @@ export default function InviteToGroupExperience() {
     if (!normalized) return eligibleFriends;
 
     return eligibleFriends.filter((friend) =>
-      `${friend.name} ${friend.email}`.toLocaleLowerCase("pt-BR").includes(normalized),
+      friend.name.toLocaleLowerCase("pt-BR").includes(normalized),
     );
   }, [eligibleFriends, query]);
 
@@ -166,13 +133,7 @@ export default function InviteToGroupExperience() {
       const friend = friends.find((item) => item.id === friendId);
 
       try {
-        await sendInvite({
-          fromUserId: user.id,
-          groupId: resolvedGroupId,
-          id: `invite-${Date.now()}-${index}-${friendId}`,
-          status: "pending",
-          toUserId: friendId,
-        });
+        await inviteMutation.mutateAsync({ groupId: resolvedGroupId, receiverId: friendId });
         successfulIds.push(friendId);
       } catch {
         failedNames.push(friend?.name ?? "um amigo");
@@ -227,7 +188,7 @@ export default function InviteToGroupExperience() {
               onPress={goBack}
               style={({ pressed }) => [styles.stateAction, pressed && styles.pressed]}
             >
-              <Text style={styles.stateActionText}>Voltar para grupos</Text>
+              <Text style={styles.stateActionText}>Voltar</Text>
             </Pressable>
           </View>
         </ScreenContainer>
@@ -248,7 +209,7 @@ export default function InviteToGroupExperience() {
           <ScreenContainer maxWidth={720} paddingHorizontal={16}>
             <View style={styles.headerSection}>
               <Pressable
-                accessibilityLabel="Voltar para grupos"
+                accessibilityLabel="Voltar"
                 accessibilityRole="button"
                 disabled={submitting}
                 hitSlop={8}
@@ -256,36 +217,8 @@ export default function InviteToGroupExperience() {
                 style={({ pressed }) => [styles.backButton, pressed && !submitting && styles.pressed]}
               >
                 <Ionicons color={colors.text} name="arrow-back" size={20} />
-                <Text style={styles.backText}>Grupos</Text>
-              </Pressable>
-
-              <ScreenHeading
-                eyebrow="Monte a turma"
-                subtitle={
-                  group
-                    ? `Escolha quem vai receber um convite para “${group.name}”.`
-                    : "Escolha os amigos que vão receber o convite."
-                }
-                title="Convidar amigos"
-              />
-
-              <View style={styles.summaryCard}>
-                <View style={styles.summaryIcon}>
-                  <Ionicons color={colors.brand} name="paper-plane-outline" size={21} />
-                </View>
-                <View style={styles.summaryCopy}>
-                  <Text style={styles.summaryTitle}>
-                    {selectedIds.length > 0
-                      ? `${selectedIds.length} ${selectedIds.length === 1 ? "amigo selecionado" : "amigos selecionados"}`
-                      : "Selecione sua companhia"}
-                  </Text>
-                  <Text style={styles.summaryText}>
-                    {alreadyInvitedCount > 0
-                      ? `${alreadyInvitedCount} já ${alreadyInvitedCount === 1 ? "possui" : "possuem"} convite pendente.`
-                      : "Você pode escolher várias pessoas de uma vez."}
-                  </Text>
-                </View>
-              </View>
+                <Text style={styles.backText}>Voltar</Text>
+              </Pressable><View style={styles.intro}><Text style={styles.title}>Convidar amigos</Text><Text style={styles.subtitle}>Convide pessoas para {group?.name ?? "este grupo"}.</Text><Text style={styles.helper}>Selecione quem você quer adicionar ao grupo.</Text></View>
 
               <View style={styles.searchShell}>
                 <Ionicons color={colors.textMuted} name="search" size={18} />
@@ -294,7 +227,7 @@ export default function InviteToGroupExperience() {
                   autoCapitalize="none"
                   editable={!submitting}
                   onChangeText={setQuery}
-                  placeholder="Buscar por nome ou e-mail"
+                  placeholder="Buscar amigos"
                   placeholderTextColor={colors.textMuted}
                   returnKeyType="search"
                   style={styles.searchInput}
@@ -370,20 +303,20 @@ export default function InviteToGroupExperience() {
                 action="Tentar novamente"
                 icon="cloud-offline-outline"
                 message={dataError}
-                onPress={() => void loadData()}
+                onPress={() => { void Promise.all([groupQuery.refetch(), membersQuery.refetch(), friendsQuery.refetch(), sentInvitesQuery.refetch()]); }}
                 title="Não foi possível carregar"
               />
             ) : query ? (
               <EmptyFriends
                 action="Limpar busca"
                 icon="search-outline"
-                message="Tente buscar pelo nome ou e-mail de outro amigo."
+                message="Tente buscar pelo nome."
                 onPress={() => setQuery("")}
                 title="Nenhum amigo encontrado"
               />
             ) : (
               <EmptyFriends
-                action="Voltar para grupos"
+                action="Voltar"
                 icon="checkmark-done-outline"
                 message="Todos os amigos disponíveis já possuem um convite pendente para este grupo."
                 onPress={goBack}
@@ -420,9 +353,6 @@ export default function InviteToGroupExperience() {
                 <View style={styles.friendCopy}>
                   <Text numberOfLines={1} style={styles.friendName}>
                     {item.name}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.friendEmail}>
-                    {item.email}
                   </Text>
                   <Text style={[styles.presenceText, online && styles.presenceTextOnline]}>
                     {online ? "Online agora" : "Offline"}
@@ -521,6 +451,10 @@ const styles = StyleSheet.create({
   listContent: { paddingBottom: 132 },
   emptyListContent: { flexGrow: 1, paddingBottom: 132 },
   headerSection: { paddingBottom: 12, paddingTop: 16 },
+  intro: { marginBottom: 18 },
+  title: { color: colors.text, fontFamily: fonts.bold, fontSize: 24, lineHeight: 30 },
+  subtitle: { color: colors.textSecondary, fontFamily: fonts.semibold, fontSize: 14, lineHeight: 20, marginTop: 6 },
+  helper: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 12, lineHeight: 18, marginTop: 3 },
   backButton: {
     alignItems: "center",
     alignSelf: "flex-start",
@@ -530,7 +464,7 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   backText: { color: colors.text, fontFamily: fonts.semibold, fontSize: 12 },
-  summaryCard: {
+  summaryCard: { display: "none",
     alignItems: "center",
     backgroundColor: colors.brandSoft,
     borderColor: colors.brandBorder,

@@ -16,11 +16,13 @@ import { UserAvatar } from "@/components/ui/UserAvatar";
 import Svg, { Path } from "react-native-svg";
 import {
   getDirectMessages,
-  getFriends,
+
   getGroupMessages,
   type ApiDirectMessage,
-  type ApiFriend,
+
 } from "@/services/api";
+import { useFriendsQuery } from "@/services/api/resources/friends";
+import { useGroupsQuery } from "@/services/api/resources/groups";
 import {
   joinDirectConversation,
   joinGroup,
@@ -34,7 +36,6 @@ import {
   useChatStore,
   type DirectChatMessage,
 } from "@/store/chat-store";
-import { useGroupStore } from "@/store/group-store";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
@@ -92,12 +93,13 @@ export default function ChatInboxExperience() {
   const addDirectMessage = useChatStore((state) => state.addDirectMessage);
   const setMessages = useChatStore((state) => state.setMessages);
   const addMessage = useChatStore((state) => state.addMessage);
-  const groups = useGroupStore((state) => state.groups);
-  const groupStoreLoading = useGroupStore((state) => state.loading);
-  const loadGroups = useGroupStore((state) => state.loadGroups);
+  const groupsQuery = useGroupsQuery({ page: 1, limit: 100 });
+  const groups = groupsQuery.data?.items ?? [];
+  const groupStoreLoading = groupsQuery.isLoading;
   const presenceStatuses = usePresenceStore((state) => state.statuses);
 
-  const [friends, setFriends] = useState<ApiFriend[]>([]);
+  const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
+  const friends = friendsQuery.data?.items ?? [];
   const [loadingDirect, setLoadingDirect] = useState(false);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,8 +114,7 @@ export default function ChatInboxExperience() {
     setError(null);
 
     try {
-      const realFriends = await getFriends();
-      setFriends(realFriends);
+      const realFriends = friendsQuery.data?.items ?? [];
 
       const histories = await Promise.allSettled(
         realFriends.map(async (friend) => ({
@@ -147,15 +148,11 @@ export default function ChatInboxExperience() {
     } finally {
       setLoadingDirect(false);
     }
-  }, [setDirectMessages, user]);
+  }, [setDirectMessages, user, friendsQuery.data]);
 
   useEffect(() => {
     void loadDirectInbox();
   }, [loadDirectInbox, reloadKey]);
-
-  useEffect(() => {
-    void loadGroups();
-  }, [loadGroups, reloadKey]);
 
   useEffect(() => {
     if (groups.length === 0) return;
@@ -257,7 +254,7 @@ export default function ChatInboxExperience() {
           lastMessage: lastMessage?.text ?? "Sem mensagens ainda",
           lastMessageAt: lastMessage?.createdAt ?? item.createdAt,
           hasMessage: Boolean(lastMessage),
-          meta: `${item.members.length} ${item.members.length === 1 ? "membro" : "membros"}`,
+          meta: `${(item.members ?? []).length} ${(item.members ?? []).length === 1 ? "membro" : "membros"}`,
           name: item.name,
           type: "group" as const,
         },

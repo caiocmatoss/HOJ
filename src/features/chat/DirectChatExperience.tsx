@@ -15,7 +15,8 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { getDirectMessages, getFriends, type ApiFriend } from "@/services/api";
+import { getDirectMessages } from "@/services/api";
+import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
 import {
   joinDirectConversation,
   leaveDirectConversation,
@@ -79,7 +80,8 @@ export default function DirectChatExperience() {
   const addDirectMessage = useChatStore((state) => state.addDirectMessage);
   const presenceStatuses = usePresenceStore((state) => state.statuses);
 
-  const [friend, setFriend] = useState<ApiFriend | null>(null);
+  const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
+  const friend = friendsQuery.data?.items.find((item) => item.id === friendId) ?? null;
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -96,7 +98,6 @@ export default function DirectChatExperience() {
 
   useEffect(() => {
     if (!user || !friendId || !conversationId || !accessToken) {
-      setFriend(null);
       setLoading(false);
       return;
     }
@@ -108,11 +109,8 @@ export default function DirectChatExperience() {
       setError(null);
 
       try {
-        const realFriends = await getFriends();
-        const realFriend = realFriends.find((item) => item.id === friendId) ?? null;
+        const realFriend = friendsQuery.data?.items.find((item) => item.id === friendId) ?? null;
         if (cancelled) return;
-
-        setFriend(realFriend);
         if (!realFriend) return;
 
         const response = await getDirectMessages(friendId);
@@ -134,7 +132,7 @@ export default function DirectChatExperience() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, conversationId, friendId, setDirectMessages, user]);
+  }, [accessToken, conversationId, friendId, setDirectMessages, user, friendsQuery.data]);
 
   useEffect(() => {
     if (!user || !friendId || !conversationId || !accessToken) return;

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,238 +12,68 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import {
-  getFriends,
-  getGroup,
-  getGroupMembers,
-  getVenue,
-  type ApiFriend,
-  type ApiGroupMember,
-  type ApiVenue,
-} from "@/services/api";
-import { useGroupStore } from "@/store/group-store";
-import { useInviteStore } from "@/store/invite-store";
+import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
+import { useGroupMembersQuery, useGroupMutation, useGroupQuery } from "@/services/api/resources/groups";
+import { useInviteMutation, useSentInvitesQuery } from "@/services/api/resources/invites";
+import { useVenueQuery } from "@/services/api/resources/venues";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii, shadows } from "@/theme/tokens";
-import type { Group } from "@/types/group";
-
-function normalizeGroup(response: Awaited<ReturnType<typeof getGroup>>): Group {
-  return {
-    creatorId: response.creatorId,
-    id: response.id,
-    members: response.members?.map((member) => member.userId) ?? [],
-    name: response.name,
-    venueId: response.venueId,
-  };
-}
-
 export default function GroupDetailExperience() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const groupId = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const user = useUserStore((state) => state.user);
   const presenceStatuses = usePresenceStore((state) => state.statuses);
-  const joinGroup = useGroupStore((state) => state.joinGroup);
-  const leaveGroup = useGroupStore((state) => state.leaveGroup);
-  const deleteGroup = useGroupStore((state) => state.deleteGroup);
-  const groupProcessing = useGroupStore((state) => state.processing);
-  const receivedInvites = useInviteStore((state) => state.invites);
-  const sentInvites = useInviteStore((state) => state.sentInvites);
-  const sendInvite = useInviteStore((state) => state.sendInvite);
-  const processingInviteIds = useInviteStore((state) => state.processingInviteIds);
-
-  const [group, setGroup] = useState<Group | null>(null);
-  const [members, setMembers] = useState<ApiGroupMember[]>([]);
-  const [friends, setFriends] = useState<ApiFriend[]>([]);
-  const [venue, setVenue] = useState<ApiVenue | null>(null);
-  const [loading, setLoading] = useState(true);
+  const groupQuery = useGroupQuery(groupId);
+  const membersQuery = useGroupMembersQuery(groupId, { page: 1, limit: 100 });
+  const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
+  const sentInvitesQuery = useSentInvitesQuery({ page: 1, limit: 100 });
+  const venueQuery = useVenueQuery(groupQuery.data?.venueId);
+  const inviteMutation = useInviteMutation("send");
+  const leaveMutation = useGroupMutation("remove");
+  const deleteMutation = useGroupMutation("delete");
+  const group = groupQuery.data ?? null;
+  const members = membersQuery.data?.items ?? group?.members ?? [];
+  const friends = friendsQuery.data?.items ?? [];
+  const sentInvites = sentInvitesQuery.data?.items ?? [];
+  const venue = venueQuery.data ?? null;
   const [refreshingMembers, setRefreshingMembers] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [invitingFriendId, setInvitingFriendId] = useState<string | null>(null);
-  const loadRequestId = useRef(0);
-
-  const loadGroup = useCallback(async () => {
-    const requestId = ++loadRequestId.current;
-    if (!groupId) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await getGroup(groupId);
-      if (requestId !== loadRequestId.current) return;
-
-      setGroup(normalizeGroup(response));
-
-      const [membersResult, friendsResult, venueResult] = await Promise.allSettled([
-        getGroupMembers(groupId),
-        getFriends(),
-        getVenue(response.venueId),
-      ]);
-
-      if (requestId !== loadRequestId.current) return;
-
-      if (membersResult.status === "fulfilled") {
-        setMembers(membersResult.value);
-        setGroup((current) =>
-          current
-            ? { ...current, members: membersResult.value.map((member) => member.userId) }
-            : current,
-        );
-      }
-
-      if (friendsResult.status === "fulfilled") setFriends(friendsResult.value);
-      if (venueResult.status === "fulfilled") setVenue(venueResult.value);
-
-      const partialFailure = [membersResult, friendsResult, venueResult].some(
-        (result) => result.status === "rejected",
-      );
-      if (partialFailure) {
-        setActionError("Algumas informações do grupo não puderam ser atualizadas.");
-      }
-    } catch (requestError) {
-      if (requestId === loadRequestId.current) {
-        setGroup(null);
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Não foi possível carregar este grupo.",
-        );
-      }
-    } finally {
-      if (requestId === loadRequestId.current) setLoading(false);
-    }
-  }, [groupId]);
-
-  useEffect(() => {
-    void loadGroup();
-    return () => {
-      loadRequestId.current += 1;
-    };
-  }, [loadGroup]);
-
-  const memberUsers = useMemo(
-    () => members.map((member) => member.user).filter((member) => Boolean(member)),
-    [members],
-  );
-
-  const pendingInvites = useMemo(
-    () => [...receivedInvites, ...sentInvites].filter((invite) => invite.status === "pending"),
-    [receivedInvites, sentInvites],
-  );
-
-  const availableFriends = useMemo(() => {
-    if (!group) return [];
-
-    return friends.filter((friend) => {
-      const isMember = group.members.includes(friend.id);
-      const isPending = pendingInvites.some(
-        (invite) => invite.groupId === group.id && invite.toUserId === friend.id,
-      );
-      return friend.id !== user?.id && !isMember && !isPending;
-    });
-  }, [friends, group, pendingInvites, user?.id]);
-
-  const handleMembership = async (nextMembership: "join" | "leave") => {
-    if (!group || !user || groupProcessing) return;
-
-    setActionError(null);
-    try {
-      if (nextMembership === "join") {
-        await joinGroup(group.id, user.id);
-        setGroup((current) =>
-          current && !current.members.includes(user.id)
-            ? { ...current, members: [...current.members, user.id] }
-            : current,
-        );
-      } else {
-        await leaveGroup(group.id, user.id);
-        setGroup((current) =>
-          current
-            ? { ...current, members: current.members.filter((memberId) => memberId !== user.id) }
-            : current,
-        );
-        setMembers((current) => current.filter((member) => member.userId !== user.id));
-      }
-    } catch (requestError) {
-      setActionError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Não foi possível atualizar sua participação.",
-      );
-    }
-  };
-
-  const handleInvite = async (friend: ApiFriend) => {
-    if (!group || !user || invitingFriendId) return;
-
-    const temporaryId = `invite-${Date.now()}-${friend.id}`;
-    setInvitingFriendId(friend.id);
-    setActionError(null);
-
-    try {
-      await sendInvite({
-        fromUserId: user.id,
-        groupId: group.id,
-        id: temporaryId,
-        status: "pending",
-        toUserId: friend.id,
-      });
-    } catch (requestError) {
-      setActionError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Não foi possível enviar o convite.",
-      );
-    } finally {
-      setInvitingFriendId(null);
-    }
-  };
-
+  const loading = groupQuery.isLoading;
+  const error = groupQuery.error instanceof Error ? groupQuery.error.message : groupQuery.error ? "Não foi possível carregar este grupo." : null;
+  const groupProcessing = leaveMutation.isPending || deleteMutation.isPending;
+  const groupMemberIds = useMemo(() => new Set(members.map((member) => member.userId)), [members]);
+  const pendingInvites = useMemo(() => sentInvites.filter((invite) => invite.status === "PENDING"), [sentInvites]);
+  const availableFriends = useMemo(() => friends.filter((friend) => !groupMemberIds.has(friend.id) && !pendingInvites.some((invite) => invite.groupId === group?.id && invite.receiverId === friend.id)), [friends, groupMemberIds, pendingInvites, group?.id]);
+  const memberUsers = useMemo(() => members.map((member) => member.user).filter(Boolean), [members]);
   const handleRefreshMembers = async () => {
-    if (!groupId || refreshingMembers) return;
-    setRefreshingMembers(true);
-    setActionError(null);
-
-    try {
-      const response = await getGroupMembers(groupId);
-      setMembers(response);
-      setGroup((current) =>
-        current ? { ...current, members: response.map((member) => member.userId) } : current,
-      );
-    } catch (requestError) {
-      setActionError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Não foi possível atualizar os membros.",
-      );
-    } finally {
-      setRefreshingMembers(false);
-    }
+    setRefreshingMembers(true); setActionError(null);
+    try { await Promise.all([groupQuery.refetch(), membersQuery.refetch(), friendsQuery.refetch(), venueQuery.refetch()]); }
+    catch { setActionError("Não foi possível atualizar os membros."); }
+    finally { setRefreshingMembers(false); }
   };
-
+  const handleInvite = async (friend: Friend) => {
+    if (!group || invitingFriendId) return;
+    setInvitingFriendId(friend.id); setActionError(null);
+    try { await inviteMutation.mutateAsync({ groupId: group.id, receiverId: friend.id }); }
+    catch { setActionError("Não foi possível enviar o convite."); }
+    finally { setInvitingFriendId(null); }
+  };
+  const handleMembership = async (next: "join" | "leave") => {
+    if (!group || !user || groupProcessing || next === "join") return;
+    setActionError(null);
+    try { await leaveMutation.mutateAsync({ groupId: group.id, userId: user.id }); await Promise.all([groupQuery.refetch(), membersQuery.refetch()]); }
+    catch { setActionError("Não foi possível atualizar sua participação."); }
+  };
   const handleDelete = async () => {
     if (!group || groupProcessing) return;
     setActionError(null);
-
-    try {
-      await deleteGroup(group.id);
-      router.replace("/(main)/chat");
-    } catch (requestError) {
-      setActionError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Não foi possível excluir o grupo.",
-      );
-    }
+    try { await deleteMutation.mutateAsync({ groupId: group.id }); router.replace("/(main)/chat"); }
+    catch { setActionError("Não foi possível excluir o grupo."); }
   };
-
   if (!groupId) {
     return <GroupState message="Não foi possível identificar este grupo." />;
   }
@@ -256,7 +86,7 @@ export default function GroupDetailExperience() {
     return <GroupState message={error ?? "Este grupo não está mais disponível."} />;
   }
 
-  const currentUserIsMember = Boolean(user && group.members.includes(user.id));
+  const currentUserIsMember = Boolean(user && members.some((member) => member.userId === user.id));
   const canDelete = Boolean(user && user.id === group.creatorId);
   const visibleFriends = availableFriends.slice(0, 4);
 
@@ -292,51 +122,37 @@ export default function GroupDetailExperience() {
           </Pressable>
         </View>
 
-        <View style={styles.heroCard}>
-          <View style={styles.heroGlow} />
-          <View style={styles.groupMark}>
-            <Ionicons color={colors.brand} name="people" size={32} />
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <View style={styles.groupMark}>
+              <Ionicons color={colors.brand} name="people" size={23} />
+            </View>
+            <View style={styles.summaryCopy}>
+              <Text numberOfLines={1} style={styles.title}>{group.name}</Text>
+              <Text style={styles.summarySubtext}>Grupo de amigos</Text>
+            </View>
           </View>
-          <Text style={styles.eyebrow}>SEU GRUPO</Text>
-          <Text style={styles.title}>{group.name}</Text>
           <View style={styles.heroMeta}>
-            <View style={styles.metaPill}>
-              <Ionicons color={colors.brand} name="people-outline" size={14} />
-              <Text style={styles.metaText}>
-                {group.members.length} {group.members.length === 1 ? "membro" : "membros"}
-              </Text>
+            <View style={styles.metaItem}>
+              <Ionicons color={colors.textMuted} name="people-outline" size={15} />
+              <Text style={styles.metaText}>{members.length} {members.length === 1 ? "membro" : "membros"}</Text>
             </View>
             {venue ? (
-              <View style={styles.metaPill}>
-                <Ionicons color={colors.brand} name="location-outline" size={14} />
+              <View style={styles.metaItem}>
+                <Ionicons color={colors.textMuted} name="location-outline" size={15} />
                 <Text numberOfLines={1} style={styles.metaText}>{venue.name}</Text>
               </View>
             ) : null}
           </View>
-
-          <View style={styles.primaryActions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() =>
-                router.push({ pathname: "/(main)/group/chat/[id]", params: { id: group.id } })
-              }
-              style={({ pressed }) => [styles.chatButton, pressed && styles.primaryPressed]}
-            >
-              <Ionicons color={colors.background} name="chatbubbles" size={19} />
-              <Text style={styles.chatButtonText}>Abrir conversa</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() =>
-                router.push({ pathname: "/(main)/group/invite", params: { groupId: group.id } })
-              }
-              style={({ pressed }) => [styles.inviteAllButton, pressed && styles.pressed]}
-            >
-              <Ionicons color={colors.text} name="person-add-outline" size={19} />
-            </Pressable>
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/(main)/group/chat/[id]", params: { id: group.id } })}
+            style={({ pressed }) => [styles.chatButton, pressed && styles.primaryPressed]}
+          >
+            <Ionicons color={colors.background} name="chatbubbles-outline" size={18} />
+            <Text style={styles.chatButtonText}>Abrir conversa</Text>
+          </Pressable>
         </View>
-
         {actionError ? (
           <View accessibilityRole="alert" style={styles.errorBanner}>
             <Ionicons color={colors.danger} name="alert-circle-outline" size={18} />
@@ -359,7 +175,7 @@ export default function GroupDetailExperience() {
               <Ionicons color={colors.brand} name="location" size={22} />
             </View>
             <View style={styles.venueCopy}>
-              <Text style={styles.cardEyebrow}>PONTO DE ENCONTRO</Text>
+              <Text style={styles.cardEyebrow}>LOCAL DO GRUPO</Text>
               <Text numberOfLines={1} style={styles.venueName}>{venue.name}</Text>
               <Text numberOfLines={1} style={styles.venueDetail}>
                 {[venue.category, venue.distance].filter(Boolean).join(" · ")}
@@ -429,7 +245,7 @@ export default function GroupDetailExperience() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>Convidar amigos</Text>
-            <Text style={styles.sectionSubtitle}>Traga mais gente para o grupo</Text>
+            <Text style={styles.sectionSubtitle}>Adicione pessoas ao grupo</Text>
           </View>
           <Pressable
             accessibilityLabel="Ver todos os amigos disponíveis"
@@ -453,7 +269,7 @@ export default function GroupDetailExperience() {
             visibleFriends.map((friend, index) => {
               const online = (presenceStatuses[friend.id] ?? friend.status) === "ONLINE";
               const isSending = invitingFriendId === friend.id ||
-                processingInviteIds.some((id) => id.endsWith(friend.id));
+                false;
               return (
                 <View key={friend.id} style={[styles.personRow, index > 0 && styles.rowDivider]}>
                   <UserAvatar
@@ -614,20 +430,24 @@ function GroupState({ message }: { message: string }) {
 
 const styles = StyleSheet.create({
   page: { backgroundColor: colors.background, flex: 1 },
-  scrollContent: { paddingBottom: 50, paddingTop: 16 },
+  scrollContent: { paddingBottom: 96, paddingTop: 12 },
   topBar: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },
   topBarLabel: { color: colors.textSecondary, fontFamily: fonts.semibold, fontSize: 12 },
   iconButton: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 22, borderWidth: 1, height: 44, justifyContent: "center", width: 44 },
-  heroCard: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.sheet, borderWidth: 1, overflow: "hidden", padding: 24, ...shadows.floating },
-  heroGlow: { backgroundColor: colors.brandSoft, borderRadius: 130, height: 230, position: "absolute", right: -110, top: -130, width: 230 },
-  groupMark: { alignItems: "center", backgroundColor: colors.brandSoft, borderColor: colors.brandBorder, borderRadius: 34, borderWidth: 1, height: 68, justifyContent: "center", width: 68 },
-  eyebrow: { color: colors.brand, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 1.5, marginTop: 17 },
-  title: { color: colors.text, fontFamily: fonts.display, fontSize: 34, lineHeight: 39, marginTop: 5, textAlign: "center" },
-  heroMeta: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 13 },
+  summaryCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, padding: 18 },
+  heroGlow: { display: "none" },
+  groupMark: { alignItems: "center", backgroundColor: colors.elevated, borderRadius: 24, height: 48, justifyContent: "center", width: 48 },
+  eyebrow: { color: colors.brand, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 1.2 },
+  title: { color: colors.text, fontFamily: fonts.bold, fontSize: 25, lineHeight: 30 },
+  summaryRow: { alignItems: "center", flexDirection: "row", gap: 12 },
+  summaryCopy: { flex: 1, minWidth: 0 },
+  summarySubtext: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 12, marginTop: 3 },
+  heroMeta: { flexDirection: "row", flexWrap: "wrap", gap: 16, marginTop: 16 },
+  metaItem: { alignItems: "center", flexDirection: "row", gap: 6 },
   metaPill: { alignItems: "center", backgroundColor: colors.elevated, borderRadius: radii.pill, flexDirection: "row", gap: 6, maxWidth: 240, paddingHorizontal: 11, paddingVertical: 7 },
   metaText: { color: colors.textSecondary, fontFamily: fonts.medium, fontSize: 11 },
-  primaryActions: { flexDirection: "row", gap: 9, marginTop: 21, width: "100%" },
-  chatButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: radii.medium, flex: 1, flexDirection: "row", gap: 8, justifyContent: "center", minHeight: 50 },
+  primaryActions: { flexDirection: "row", gap: 9, marginTop: 16, width: "100%" },
+  chatButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: 15, flexDirection: "row", gap: 8, justifyContent: "center", marginTop: 18, minHeight: 50, width: "100%" },
   chatButtonText: { color: colors.background, fontFamily: fonts.bold, fontSize: 14 },
   inviteAllButton: { alignItems: "center", backgroundColor: colors.elevated, borderColor: colors.borderStrong, borderRadius: radii.medium, borderWidth: 1, height: 50, justifyContent: "center", width: 50 },
   errorBanner: { alignItems: "center", backgroundColor: colors.dangerSoft, borderColor: "rgba(239, 125, 125, 0.2)", borderRadius: radii.small, borderWidth: 1, flexDirection: "row", gap: 8, marginTop: 14, padding: 12 },

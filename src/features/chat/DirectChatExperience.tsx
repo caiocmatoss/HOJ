@@ -17,7 +17,7 @@ import {
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
-import { useDirectMessagesQuery, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
+import { useDirectMessagesQuery, useMarkChatReadMutation, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
 import { messageKeys } from "@/services/api/query-keys";
 import {
   joinDirectConversation,
@@ -85,9 +85,11 @@ export default function DirectChatExperience() {
   const [error, setError] = useState<string | null>(null);
   const messagesQuery = useDirectMessagesQuery(friendId, { page: 1, limit: 100 });
   const sendMutation = useSendDirectMessageMutation();
+  const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
   const sending = sendMutation.isPending;
   const listRef = useRef<FlatList<DirectChatMessage>>(null);
+  const markedReadId = useRef<string | null>(null);
 
   const conversationId = useMemo(() => {
     if (!user || !friendId) return null;
@@ -95,6 +97,11 @@ export default function DirectChatExperience() {
   }, [friendId, user]);
 
   const messages = (messagesQuery.data?.items ?? []) as DirectChatMessage[];
+
+  useEffect(() => {
+    const last = messagesQuery.data?.items.at(-1);
+    if (friendId && last && markedReadId.current !== last.id) { markedReadId.current = last.id; markReadMutation.mutate({ threadType: "DIRECT", threadKey: friendId, messageId: last.id }); }
+  }, [friendId, markReadMutation, messagesQuery.data]);
 
   useEffect(() => {
     if (messagesQuery.error) {

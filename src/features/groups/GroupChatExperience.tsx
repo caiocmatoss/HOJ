@@ -15,7 +15,7 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { useGroupMessagesQuery, useSendGroupMessageMutation, type GroupMessage } from "@/services/api/resources/messages";
+import { useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, type GroupMessage } from "@/services/api/resources/messages";
 import { useGroupQuery } from "@/services/api/resources/groups";
 import { joinGroup, leaveGroup, onNewMessage, sendSocketMessage } from "@/services/socket";
 import type { ChatMessage } from "@/store/chat-store";
@@ -83,6 +83,7 @@ export default function GroupChatExperience() {
   const groupQuery = useGroupQuery(groupId);
   const messagesQuery = useGroupMessagesQuery(groupId, { page: 1, limit: 100 });
   const sendMutation = useSendGroupMessageMutation();
+  const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
 
 
@@ -94,9 +95,18 @@ export default function GroupChatExperience() {
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const processedMessageIds = useRef(new Set<string>());
+  const markedReadId = useRef<string | null>(null);
 
   const group = groupQuery.data ?? null;
   const messages = useMemo(() => (messagesQuery.data?.items ?? []).map(normalizeMessage), [messagesQuery.data]);
+
+  useEffect(() => {
+    const last = messagesQuery.data?.items.at(-1);
+    if (groupId && last && markedReadId.current !== last.id) {
+      markedReadId.current = last.id;
+      markReadMutation.mutate({ threadType: "GROUP", threadKey: groupId, messageId: last.id });
+    }
+  }, [groupId, markReadMutation, messagesQuery.data]);
 
   const scrollToBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated }));

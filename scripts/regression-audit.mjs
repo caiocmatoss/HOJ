@@ -48,8 +48,8 @@ assert("messaging resource uses apiClient", messagesResource.includes("apiClient
 assert("messaging query keys are defined", read("src/services/api/query-keys.ts").includes("messageKeys") && messagesResource.includes("messageKeys"));
 assert("socket client is singleton", socketService.includes("let socket: AppSocket | null = null") && socketService.includes("socket = io(") && (socketService.match(/socket = io\(/g) ?? []).length === 1);
 assert("socket message listeners expose cleanup", /currentSocket\.off\([\s\S]{0,80}?"message:new"/.test(socketService) && /currentSocket\.off\([\s\S]{0,100}?"direct:message:new"/.test(socketService));
-assert("realtime message updates target React Query", groupChat.includes("queryClient.setQueryData") && directChat.includes("queryClient.setQueryData") && chatInbox.includes("queryClient.setQueryData"));
-assert("realtime dedupe uses message ids", groupChat.includes("item.id !== message.id") && directChat.includes("item.id !== message.id") && chatInbox.includes("item.id !== message.id"));
+assert("realtime message updates target React Query", groupChat.includes("queryClient.setQueryData") && directChat.includes("queryClient.setQueryData"));
+assert("realtime dedupe uses message ids", groupChat.includes("item.id !== message.id") && directChat.includes("item.id !== message.id"));
 assert("no socket token logging", !socketService.includes("console.log(accessToken") && !socketService.includes("console.log(token"));
 assert("refresh is single-flight", apiClient.includes("let refreshFlight") && apiClient.includes("if (!refreshFlight)") && apiClient.includes("refreshFlight = null"));
 assert("refreshed token reauthenticates socket", apiClient.includes("reauthenticateSocket(result.accessToken)") && socketService.includes("export function reauthenticateSocket"));
@@ -74,6 +74,14 @@ assert("manual occupancy labels remain available", venueState.includes("Cheio") 
 assert("occupancy uses API percent directly", venueState.includes("Number(venue.occupancyPercent)") && !venueState.includes("venue.occupancy)"));
 assert("zero percent is known", venueState.includes("Number.isFinite(percentage)") && venueState.includes("percentage > 70"));
 assert("over-capacity percent is preserved", venueState.includes("percentage }"));
+assert("ChatInbox uses aggregated inbox query", chatInbox.includes("useChatInboxQuery") && chatInbox.includes("/messages/inbox") === false);
+assert("ChatInbox does not fan out message history", !chatInbox.includes("useQueries") && !chatInbox.includes("listDirectMessages") && !chatInbox.includes("listGroupMessages"));
+assert("messaging resource exposes unread count", messagesResource.includes("useChatUnreadCountQuery") && messagesResource.includes("/messages/unread/count"));
+assert("messaging resource exposes mark-read", messagesResource.includes("useMarkChatReadMutation") && messagesResource.includes("/messages/read"));
+assert("DirectChat marks direct thread read via API", directChat.includes("useMarkChatReadMutation") && directChat.includes('threadType: "DIRECT"'));
+assert("GroupChat marks group thread read via API", groupChat.includes("useMarkChatReadMutation") && groupChat.includes('threadType: "GROUP"'));
+assert("read state is not local unread authority", !chatInbox.includes("setUnread") && !directChat.includes("setUnread") && !groupChat.includes("setUnread"));
+assert("message query keys include inbox and unread", read("src/services/api/query-keys.ts").includes("inbox:") && read("src/services/api/query-keys.ts").includes("unreadCount"));
 
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]

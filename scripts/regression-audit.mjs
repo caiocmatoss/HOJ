@@ -23,6 +23,8 @@ const chatInbox = read("src/features/chat/ChatInboxExperience.tsx");
 const directChat = read("src/features/chat/DirectChatExperience.tsx");
 const messagesResource = read("src/services/api/resources/messages.ts");
 const socketService = read("src/services/socket.ts");
+const apiClient = read("src/services/api/client.ts");
+const authService = read("src/services/api/auth.ts");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
 assert("groups is hidden from primary tab bar", /name="groups" options=\{\{ href: null \}\}/.test(tabs));
@@ -49,6 +51,11 @@ assert("socket message listeners expose cleanup", /currentSocket\.off\([\s\S]{0,
 assert("realtime message updates target React Query", groupChat.includes("queryClient.setQueryData") && directChat.includes("queryClient.setQueryData") && chatInbox.includes("queryClient.setQueryData"));
 assert("realtime dedupe uses message ids", groupChat.includes("item.id !== message.id") && directChat.includes("item.id !== message.id") && chatInbox.includes("item.id !== message.id"));
 assert("no socket token logging", !socketService.includes("console.log(accessToken") && !socketService.includes("console.log(token"));
+assert("refresh is single-flight", apiClient.includes("let refreshFlight") && apiClient.includes("if (!refreshFlight)") && apiClient.includes("refreshFlight = null"));
+assert("refreshed token reauthenticates socket", apiClient.includes("reauthenticateSocket(result.accessToken)") && socketService.includes("export function reauthenticateSocket"));
+assert("socket reauth preserves singleton", socketService.includes("socket.auth") && socketService.includes("socket.disconnect()") && socketService.includes("socket.connect()") && (socketService.match(/socket = io\(/g) ?? []).length === 1);
+assert("logout invalidates refresh generation", authService.includes("beginSessionTermination()") && apiClient.includes("generationAtStart !== sessionGeneration"));
+assert("refresh retries only once", apiClient.includes("retryOnUnauthorized: false") && apiClient.includes("!isAuthEndpoint(path)"));
 assert("notification center is shell overlay only", !fs.existsSync(path.join(root, "src/app/notification-center.tsx")) && !fs.existsSync(path.join(root, "src/app/(main)/notification-center.tsx")) && tabs.includes("NotificationCenterExperience"));
 assert("explore opens notification center overlay", explore.includes("openNotificationCenter()") && explore.includes("Abrir notificações"));
 assert("legacy invites route redirects to explore", invitesRoute.includes("/(main)/explore"));

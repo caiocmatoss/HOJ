@@ -323,6 +323,18 @@ export function getSocket():
   return socket;
 }
 
+/** Atualiza a credencial da sessão no singleton sem criar outra conexão. */
+export function reauthenticateSocket(accessToken: string): void {
+  if (!accessToken || !socket) return;
+
+  socket.auth = { ...(socket.auth as Record<string, unknown>), token: accessToken };
+  if (!socket.connected) return;
+
+  // Reconnect on the same Socket instance; the connect handler restores rooms.
+  socket.disconnect();
+  socket.connect();
+}
+
 /* =========================================================
  * CONECTAR
  * ======================================================= */

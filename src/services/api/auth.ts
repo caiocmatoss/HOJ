@@ -1,4 +1,4 @@
-import { apiClient, clearSession } from './client';
+import { apiClient, beginSessionTermination, clearSession } from './client';
 import { clearRefreshToken, getRefreshToken, setRefreshToken } from '@/services/auth/session-storage';
 import { useUserStore } from '@/store/user-store';
 import type { AuthResponse, AuthUser } from './types';
@@ -35,6 +35,7 @@ export async function restoreSession(): Promise<boolean> {
 }
 
 export async function logout(): Promise<void> {
+  beginSessionTermination();
   const refreshToken = await getRefreshToken();
   try {
     if (refreshToken) await apiClient<void>('/auth/logout', { method: 'POST', authenticated: false, body: { refreshToken }, retryOnUnauthorized: false });
@@ -46,6 +47,7 @@ export async function logout(): Promise<void> {
 }
 
 export async function logoutAll(): Promise<void> {
+  beginSessionTermination();
   try {
     await apiClient<void>('/auth/logout-all', { method: 'POST' });
   } finally {

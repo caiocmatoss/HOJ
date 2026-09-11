@@ -1,5 +1,5 @@
 import { BACKEND_URL } from '@/config/backend';
-import { disconnectSocket } from '@/services/socket';
+import { disconnectSocket, reauthenticateSocket } from '@/services/socket';
 import { clearRefreshToken, getRefreshToken, setRefreshToken } from '@/services/auth/session-storage';
 import { useUserStore } from '@/store/user-store';
 import { ApiError, toApiError } from './errors';
@@ -17,6 +17,11 @@ type RequestOptions = {
 };
 
 let refreshFlight: Promise<string | null> | null = null;
+let sessionGeneration = 0;
+
+export function beginSessionTermination(): void {
+  sessionGeneration += 1;
+}
 
 function isAuthEndpoint(path: string): boolean {
   return /^\/auth\/(login|register|refresh|forgot-password|reset-password)/.test(path);
@@ -28,6 +33,7 @@ async function readPayload(response: Response): Promise<unknown> {
 }
 
 async function refreshAccessToken(): Promise<string | null> {
+  const generationAtStart = sessionGeneration;
   const refreshToken = await getRefreshToken();
   if (!refreshToken) return null;
   const response = await fetch(`${API_URL}/auth/refresh`, {
@@ -42,8 +48,10 @@ async function refreshAccessToken(): Promise<string | null> {
   }
   const result = payload as RefreshResponse;
   if (!result?.accessToken || !result.refreshToken) throw new ApiError(502, 'Sessão inválida.');
+  if (generationAtStart !== sessionGeneration) throw new ApiError(401, 'Sessão encerrada.');
   await setRefreshToken(result.refreshToken);
   useUserStore.getState().setAccessToken(result.accessToken);
+  reauthenticateSocket(result.accessToken);
   return result.accessToken;
 }
 
@@ -85,6 +93,7 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
 }
 
 export async function clearSession(): Promise<void> {
+  sessionGeneration += 1;
   await clearRefreshToken();
   disconnectSocket();
   useUserStore.getState().clearAuth();

@@ -17,7 +17,7 @@ import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, type GroupMessage } from "@/services/api/resources/messages";
 import { useGroupQuery } from "@/services/api/resources/groups";
-import { joinGroup, leaveGroup, onNewMessage, sendSocketMessage } from "@/services/socket";
+import { emitGroupTyping, joinGroup, leaveGroup, onGroupTyping, onNewMessage, sendSocketMessage } from "@/services/socket";
 import type { ChatMessage } from "@/store/chat-store";
 import { useQueryClient } from "@tanstack/react-query";
 import { messageKeys } from "@/services/api/query-keys";
@@ -96,6 +96,9 @@ export default function GroupChatExperience() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const processedMessageIds = useRef(new Set<string>());
   const markedReadId = useRef<string | null>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteTypingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
 
   const group = groupQuery.data ?? null;
   const messages = useMemo(() => (messagesQuery.data?.items ?? []).map(normalizeMessage), [messagesQuery.data]);
@@ -114,6 +117,18 @@ export default function GroupChatExperience() {
 
 
   useEffect(() => { if (messagesQuery.error) setError(messagesQuery.error instanceof Error ? messagesQuery.error.message : "Não foi possível carregar as mensagens."); }, [messagesQuery.error]);
+
+  useEffect(() => {
+    if (!groupId || !user) return;
+    const unsubscribe = onGroupTyping((data) => {
+      if (data.groupId !== groupId || data.userId === user.id) return;
+      const prior = remoteTypingTimers.current.get(data.userId);
+      if (prior) clearTimeout(prior);
+      setTypingUsers((current) => { const next = { ...current }; if (data.isTyping) next[data.userId] = data.user.name; else delete next[data.userId]; return next; });
+      if (data.isTyping) remoteTypingTimers.current.set(data.userId, setTimeout(() => { setTypingUsers((current) => { const next = { ...current }; delete next[data.userId]; return next; }); remoteTypingTimers.current.delete(data.userId); }, 4000));
+    });
+    return () => { unsubscribe(); remoteTypingTimers.current.forEach(clearTimeout); remoteTypingTimers.current.clear(); emitGroupTyping(groupId, false); };
+  }, [groupId, user]);
 
   useEffect(() => {
     if (!groupId || !accessToken) return;
@@ -167,6 +182,8 @@ export default function GroupChatExperience() {
 
     setSending(true);
     setError(null);
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    emitGroupTyping(groupId, false);
     try {
       const response = await sendMutation.mutateAsync({ groupId, text: trimmed });
       queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: { items: GroupMessage[]; page: number; limit: number; totalCount: number; totalPages: number } | undefined) => current ? { ...current, items: [...current.items.filter((item) => item.id !== response.id), response].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : current);
@@ -182,6 +199,18 @@ export default function GroupChatExperience() {
       setSending(false);
     }
   };
+
+  const handleTextChange = (value: string) => {
+    setText(value);
+    if (!groupId) return;
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    if (!value.trim()) { emitGroupTyping(groupId, false); return; }
+    emitGroupTyping(groupId, true);
+    typingTimer.current = setTimeout(() => emitGroupTyping(groupId, false), 1800);
+  };
+
+  const typingNames = Object.values(typingUsers);
+  const typingLabel = typingNames.length === 1 ? `${typingNames[0] ?? "Alguém"} está digitando...` : typingNames.length === 2 ? `${typingNames[0] ?? "Alguém"} e ${typingNames[1] ?? "alguém"} estão digitando...` : typingNames.length > 2 ? `${typingNames.length} pessoas estão digitando...` : null;
 
   const handleBack = () => router.replace("/(main)/chat");
 
@@ -339,13 +368,15 @@ export default function GroupChatExperience() {
           )}
 
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
+            {typingLabel ? <Text style={styles.typingIndicator}>{typingLabel}</Text> : null}
             <View style={styles.composer}>
               <TextInput
                 accessibilityLabel="Mensagem para o grupo"
                 editable={!sending}
                 maxLength={2000}
                 multiline
-                onChangeText={setText}
+                onChangeText={handleTextChange}
+                onBlur={() => emitGroupTyping(groupId, false)}
                 onSubmitEditing={() => {
                   if (Platform.OS === "web" && !text.includes("\n")) void handleSend();
                 }}
@@ -468,6 +499,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.text, fontFamily: fonts.display, fontSize: 25, marginTop: 18 },
   emptyText: { color: colors.textSecondary, fontFamily: fonts.regular, fontSize: 12, lineHeight: 18, marginTop: 7, maxWidth: 300, textAlign: "center" },
   composerArea: { backgroundColor: colors.background, borderTopColor: colors.border, borderTopWidth: 1, paddingBottom: 0, paddingHorizontal: 12, paddingTop: 9 },
+  typingIndicator: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginBottom: 5, marginLeft: 5 },
   composer: { alignItems: "flex-end", backgroundColor: colors.elevated, borderColor: colors.borderStrong, borderRadius: radii.large, borderWidth: 1, flexDirection: "row", minHeight: 50, paddingBottom: 5, paddingLeft: 14, paddingRight: 5, paddingTop: 5 },
   input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19, maxHeight: 110, minHeight: 39, paddingHorizontal: 0, paddingVertical: 9 },
   sendButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: 21, height: 42, justifyContent: "center", marginLeft: 8, width: 42 },

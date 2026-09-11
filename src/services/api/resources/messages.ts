@@ -20,6 +20,10 @@ export type ChatInboxItem = { threadType: "DIRECT" | "GROUP"; threadKey: string;
 export async function listChatInbox(p: MessagePagination = {}): Promise<PaginatedResult<ChatInboxItem>> { const r = await apiClientWithMeta<ChatInboxItem[]>(`/messages/inbox?${qs(p)}`); return parsePaginationHeaders(r.data, r.headers); }
 export async function getChatUnreadCount(): Promise<number> { const result = await apiClient<{ count: number }>("/messages/unread/count"); return result.count; }
 export async function markChatThreadRead(input: { threadType: "DIRECT" | "GROUP"; threadKey: string; messageId?: string }) { return apiClient(`/messages/read`, { method: "POST", body: input }); }
+export type DirectReadCursor = { lastReadAt: string | null; lastReadMessageId: string | null };
+export type DirectReadState = { threadType: "DIRECT"; threadKey: string; self: DirectReadCursor; peer: DirectReadCursor };
+export async function getDirectReadState(peerUserId: string): Promise<DirectReadState> { return apiClient<DirectReadState>(`/messages/read-state/direct/${encodeURIComponent(peerUserId)}`); }
 export function useChatInboxQuery(p: MessagePagination = {}) { return useQuery({ queryKey: messageKeys.inbox(p), queryFn: () => listChatInbox(p) }); }
 export function useChatUnreadCountQuery() { return useQuery({ queryKey: messageKeys.unreadCount, queryFn: getChatUnreadCount }); }
+export function useDirectReadStateQuery(peerUserId?: string) { return useQuery({ queryKey: messageKeys.directReadState(peerUserId ?? ""), queryFn: () => getDirectReadState(peerUserId as string), enabled: Boolean(peerUserId) }); }
 export function useMarkChatReadMutation() { const c = useQueryClient(); return useMutation({ mutationFn: markChatThreadRead, onSuccess: () => { void c.invalidateQueries({ queryKey: messageKeys.inbox() }); void c.invalidateQueries({ queryKey: messageKeys.unreadCount }); } }); }

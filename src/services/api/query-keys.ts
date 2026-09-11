@@ -30,6 +30,7 @@ export const messageKeys = {
   all: ["messages"] as const,
   inbox: (params: Record<string, unknown> = {}) => ["messages", "inbox", params] as const,
   unreadCount: ["messages", "unread-count"] as const,
+  directReadState: (userId: string) => ["messages", "direct-read-state", userId] as const,
   group: (id: string, params: Record<string, unknown> = {}) => ["messages", "group", id, params] as const,
   direct: (id: string, params: Record<string, unknown> = {}) => ["messages", "direct", id, params] as const,
 };

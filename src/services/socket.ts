@@ -53,6 +53,9 @@ export type DirectServerMessage = {
     status: string;
   };
 };
+export type DirectTypingData = { userId: string; isTyping: boolean; occurredAt: string };
+export type GroupTypingData = { groupId: string; userId: string; user: { id: string; name: string; avatar?: string | null }; isTyping: boolean; occurredAt: string };
+export type DirectReadData = { userId: string; peerUserId: string; lastReadAt: string; lastReadMessageId: string };
 
 export type ChatErrorData = {
   code?: string;
@@ -153,6 +156,9 @@ type ServerToClientEvents = {
   "direct:message:sent": (
     message: DirectServerMessage,
   ) => void;
+  "direct:typing": (data: DirectTypingData) => void;
+  "direct:read": (data: DirectReadData) => void;
+  "chat:typing": (data: GroupTypingData) => void;
 
   /* -------------------------
    * PRESENÇA
@@ -238,6 +244,8 @@ type ClientToServerEvents = {
       text: string;
     },
   ) => void;
+  "direct:typing": (data: { peerUserId: string; isTyping: boolean }) => void;
+  "chat:typing": (data: { groupId: string; isTyping: boolean }) => void;
 
   /* -------------------------
    * PRESENÇA
@@ -2002,6 +2010,12 @@ export function onNewDirectMessage(
     );
   };
 }
+
+export function emitDirectTyping(peerUserId: string, isTyping: boolean): void { if (socket?.connected) socket.emit("direct:typing", { peerUserId, isTyping }); }
+export function emitGroupTyping(groupId: string, isTyping: boolean): void { if (socket?.connected) socket.emit("chat:typing", { groupId, isTyping }); }
+export function onDirectTyping(callback: (data: DirectTypingData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:typing", callback); return () => currentSocket.off("direct:typing", callback); }
+export function onDirectRead(callback: (data: DirectReadData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:read", callback); return () => currentSocket.off("direct:read", callback); }
+export function onGroupTyping(callback: (data: GroupTypingData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("chat:typing", callback); return () => currentSocket.off("chat:typing", callback); }
 
 /* =========================================================
  * LISTENERS DE CHAT DE GRUPO

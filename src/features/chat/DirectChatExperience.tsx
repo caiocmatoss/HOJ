@@ -17,12 +17,15 @@ import {
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
-import { useDirectMessagesQuery, useMarkChatReadMutation, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
+import { useDirectMessagesQuery, useDirectReadStateQuery, useMarkChatReadMutation, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
 import { messageKeys } from "@/services/api/query-keys";
 import {
   joinDirectConversation,
   leaveDirectConversation,
   onNewDirectMessage,
+  onDirectRead,
+  onDirectTyping,
+  emitDirectTyping,
 } from "@/services/socket";
 import type { DirectChatMessage } from "@/store/chat-store";
 import Svg, { Circle, Path } from "react-native-svg";
@@ -69,6 +72,13 @@ function formatDayLabel(value: string) {
   });
 }
 
+function isMessageReadByPeer(message: DirectMessage, cursor?: { lastReadAt: string | null; lastReadMessageId: string | null }) {
+  if (!cursor?.lastReadAt) return false;
+  const messageTime = new Date(message.createdAt).getTime();
+  const cursorTime = new Date(cursor.lastReadAt).getTime();
+  return messageTime < cursorTime || (messageTime === cursorTime && Boolean(cursor.lastReadMessageId) && message.id <= cursor.lastReadMessageId!);
+}
+
 export default function DirectChatExperience() {
   const tabBarHeight = MAIN_TAB_BAR_HEIGHT;
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
@@ -84,12 +94,16 @@ export default function DirectChatExperience() {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesQuery = useDirectMessagesQuery(friendId, { page: 1, limit: 100 });
+  const readStateQuery = useDirectReadStateQuery(friendId);
   const sendMutation = useSendDirectMessageMutation();
   const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
   const sending = sendMutation.isPending;
   const listRef = useRef<FlatList<DirectChatMessage>>(null);
   const markedReadId = useRef<string | null>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [remoteTyping, setRemoteTyping] = useState(false);
 
   const conversationId = useMemo(() => {
     if (!user || !friendId) return null;
@@ -102,6 +116,28 @@ export default function DirectChatExperience() {
     const last = messagesQuery.data?.items.at(-1);
     if (friendId && last && markedReadId.current !== last.id) { markedReadId.current = last.id; markReadMutation.mutate({ threadType: "DIRECT", threadKey: friendId, messageId: last.id }); }
   }, [friendId, markReadMutation, messagesQuery.data]);
+
+  useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); if (remoteTypingTimer.current) clearTimeout(remoteTypingTimer.current); if (friendId) emitDirectTyping(friendId, false); }, [friendId]);
+
+  useEffect(() => {
+    if (!friendId || !user) return;
+    const unsubscribe = onDirectTyping((data) => {
+      if (data.userId !== friendId) return;
+      if (remoteTypingTimer.current) clearTimeout(remoteTypingTimer.current);
+      setRemoteTyping(data.isTyping);
+      if (data.isTyping) remoteTypingTimer.current = setTimeout(() => setRemoteTyping(false), 4000);
+    });
+    return unsubscribe;
+  }, [friendId, user]);
+
+  useEffect(() => {
+    if (!friendId || !user) return;
+    const unsubscribe = onDirectRead((data) => {
+      if (data.userId !== friendId || data.peerUserId !== user.id) return;
+      queryClient.setQueryData(messageKeys.directReadState(friendId), (current: any) => current ? { ...current, peer: { lastReadAt: data.lastReadAt, lastReadMessageId: data.lastReadMessageId } } : current);
+    });
+    return unsubscribe;
+  }, [friendId, queryClient, user]);
 
   useEffect(() => {
     if (messagesQuery.error) {
@@ -207,6 +243,8 @@ export default function DirectChatExperience() {
     }
 
     setError(null);
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    emitDirectTyping(friendId, false);
 
     try {
       const message = await sendMutation.mutateAsync({ userId: friendId, text: trimmedText });
@@ -224,6 +262,15 @@ export default function DirectChatExperience() {
       );
     } finally {
     }
+  };
+
+  const handleTextChange = (value: string) => {
+    setText(value);
+    if (!friendId) return;
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    if (!value.trim()) { emitDirectTyping(friendId, false); return; }
+    emitDirectTyping(friendId, true);
+    typingTimer.current = setTimeout(() => emitDirectTyping(friendId, false), 1800);
   };
 
   if (!friendId || !user || !conversationId) {
@@ -348,7 +395,7 @@ export default function DirectChatExperience() {
                           {formatMessageTime(item.createdAt)}
                         </Text>
                         {isMine ? (
-                          <Ionicons color="#665312" name="checkmark-done" size={13} />
+                          <Text style={styles.readStatus}>{isMessageReadByPeer(item, readStateQuery.data?.peer) ? "Lida" : "Enviada"}</Text>
                         ) : null}
                       </View>
                     </View>
@@ -371,12 +418,14 @@ export default function DirectChatExperience() {
           />
 
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
+            {remoteTyping ? <Text style={styles.typingIndicator}>{friend.name} está digitando...</Text> : null}
             <View style={styles.composer}>
               <TextInput
                 editable={!sending}
                 maxLength={2000}
                 multiline
-                onChangeText={setText}
+                onChangeText={handleTextChange}
+                onBlur={() => { if (friendId) emitDirectTyping(friendId, false); }}
                 onSubmitEditing={() => {
                   if (Platform.OS === "web" && !text.includes("\n")) void handleSend();
                 }}
@@ -513,12 +562,14 @@ const styles = StyleSheet.create({
   myMessageText: { color: colors.background },
   messageMeta: { alignItems: "center", alignSelf: "flex-end", flexDirection: "row", gap: 3, marginTop: 3 },
   messageTime: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10 },
+  readStatus: { color: "#665312", fontFamily: fonts.regular, fontSize: 9 },
   myMessageTime: { color: "#665312" },
   emptyConversation: { alignItems: "center", paddingHorizontal: 18 },
   emptyAvatarRing: { borderColor: colors.brandBorder, borderRadius: 40, borderWidth: 1, padding: 5 },
   emptyTitle: { color: colors.text, fontFamily: fonts.display, fontSize: 25, marginTop: 18 },
   emptyText: { color: colors.textSecondary, fontFamily: fonts.regular, fontSize: 12, lineHeight: 18, marginTop: 7, maxWidth: 300, textAlign: "center" },
   composerArea: { backgroundColor: colors.background, borderTopColor: colors.border, borderTopWidth: 1, paddingBottom: 0, paddingHorizontal: 16, paddingTop: 10 },
+  typingIndicator: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginBottom: 5, marginLeft: 5 },
   composer: { alignItems: "flex-end", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, flexDirection: "row", minHeight: 50, paddingBottom: 5, paddingLeft: 16, paddingRight: 5, paddingTop: 5 },
   input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19, maxHeight: 110, minHeight: 39, paddingHorizontal: 0, paddingVertical: 9 },
   sendButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: 21, height: 42, justifyContent: "center", marginLeft: 8, width: 42 },

@@ -82,6 +82,12 @@ assert("DirectChat marks direct thread read via API", directChat.includes("useMa
 assert("GroupChat marks group thread read via API", groupChat.includes("useMarkChatReadMutation") && groupChat.includes('threadType: "GROUP"'));
 assert("read state is not local unread authority", !chatInbox.includes("setUnread") && !directChat.includes("setUnread") && !groupChat.includes("setUnread"));
 assert("message query keys include inbox and unread", read("src/services/api/query-keys.ts").includes("inbox:") && read("src/services/api/query-keys.ts").includes("unreadCount"));
+assert("direct typing uses socket with cleanup", directChat.includes("emitDirectTyping") && directChat.includes("onDirectTyping") && directChat.includes("clearTimeout"));
+assert("group typing uses socket with cleanup", groupChat.includes("emitGroupTyping") && groupChat.includes("onGroupTyping") && groupChat.includes("clearTimeout"));
+assert("direct read state is backend backed", directChat.includes("useDirectReadStateQuery") && messagesResource.includes("/messages/read-state/direct/"));
+assert("direct read event updates React Query", directChat.includes("onDirectRead") && directChat.includes("messageKeys.directReadState"));
+assert("no delivered receipt state", !directChat.includes("Entregue") && !directChat.includes("delivered"));
+assert("typing has stale expiry", directChat.includes("4000") && groupChat.includes("4000"));
 
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]

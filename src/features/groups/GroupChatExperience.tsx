@@ -15,10 +15,12 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { getGroupMessages, type ApiGroupMessage } from "@/services/api";
+import { useGroupMessagesQuery, useSendGroupMessageMutation, type GroupMessage } from "@/services/api/resources/messages";
 import { useGroupQuery } from "@/services/api/resources/groups";
 import { joinGroup, leaveGroup, onNewMessage, sendSocketMessage } from "@/services/socket";
-import { useChatStore, type ChatMessage } from "@/store/chat-store";
+import type { ChatMessage } from "@/store/chat-store";
+import { useQueryClient } from "@tanstack/react-query";
+import { messageKeys } from "@/services/api/query-keys";
 
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
@@ -27,7 +29,7 @@ import { MAIN_TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
 const CHAT_COMPOSER_TAB_GAP = 8;
 import Svg, { Path } from "react-native-svg";
 
-function normalizeMessage(message: ApiGroupMessage): ChatMessage {
+function normalizeMessage(message: GroupMessage): ChatMessage {
   return {
     createdAt: message.createdAt,
     groupId: message.groupId,
@@ -79,14 +81,14 @@ export default function GroupChatExperience() {
   const user = useUserStore((state) => state.user);
   const accessToken = useUserStore((state) => state.accessToken);
   const groupQuery = useGroupQuery(groupId);
-  const storedMessages = useChatStore((state) => state.messages);
-  const setMessages = useChatStore((state) => state.setMessages);
-  const addMessage = useChatStore((state) => state.addMessage);
+  const messagesQuery = useGroupMessagesQuery(groupId, { page: 1, limit: 100 });
+  const sendMutation = useSendGroupMessageMutation();
+  const queryClient = useQueryClient();
 
 
   const [text, setText] = useState("");
   const loadingGroup = groupQuery.isLoading;
-  const [loadingMessages, setLoadingMessages] = useState(true);
+  const loadingMessages = messagesQuery.isLoading;
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,50 +96,14 @@ export default function GroupChatExperience() {
   const processedMessageIds = useRef(new Set<string>());
 
   const group = groupQuery.data ?? null;
-  const messages = useMemo(
-    () => (groupId ? storedMessages[groupId] ?? [] : []),
-    [groupId, storedMessages],
-  );
+  const messages = useMemo(() => (messagesQuery.data?.items ?? []).map(normalizeMessage), [messagesQuery.data]);
 
   const scrollToBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated }));
   }, []);
 
 
-  useEffect(() => {
-    if (!groupId || !accessToken) {
-      setLoadingMessages(false);
-      return;
-    }
-
-    let cancelled = false;
-    setLoadingMessages(true);
-    setError(null);
-
-    getGroupMessages(groupId)
-      .then((response) => {
-        if (cancelled) return;
-        const normalized = response.map(normalizeMessage);
-        normalized.forEach((message) => processedMessageIds.current.add(message.id));
-        setMessages(groupId, normalized);
-      })
-      .catch((requestError: unknown) => {
-        if (!cancelled) {
-          setError(
-            requestError instanceof Error
-              ? requestError.message
-              : "Não foi possível carregar as mensagens.",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingMessages(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, groupId, setMessages]);
+  useEffect(() => { if (messagesQuery.error) setError(messagesQuery.error instanceof Error ? messagesQuery.error.message : "Não foi possível carregar as mensagens."); }, [messagesQuery.error]);
 
   useEffect(() => {
     if (!groupId || !accessToken) return;
@@ -153,7 +119,7 @@ export default function GroupChatExperience() {
           if (processedMessageIds.current.has(message.id)) return;
 
           processedMessageIds.current.add(message.id);
-          addMessage(groupId, normalizeMessage(message));
+          queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: { items: GroupMessage[]; page: number; limit: number; totalCount: number; totalPages: number } | undefined) => current ? { ...current, items: [...current.items.filter((item) => item.id !== message.id), message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : current);
           scrollToBottom(true);
         });
         await joinGroup(groupId);
@@ -177,7 +143,7 @@ export default function GroupChatExperience() {
       leaveGroup(groupId);
       processedMessageIds.current.clear();
     };
-  }, [accessToken, addMessage, groupId, scrollToBottom]);
+  }, [accessToken, groupId, queryClient, scrollToBottom]);
 
   useEffect(() => {
     if (loadingMessages || messages.length === 0) return;
@@ -192,10 +158,8 @@ export default function GroupChatExperience() {
     setSending(true);
     setError(null);
     try {
-      const response = await sendSocketMessage(groupId, trimmed);
-      const normalized = normalizeMessage(response);
-      processedMessageIds.current.add(normalized.id);
-      addMessage(groupId, normalized);
+      const response = await sendMutation.mutateAsync({ groupId, text: trimmed });
+      queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: { items: GroupMessage[]; page: number; limit: number; totalCount: number; totalPages: number } | undefined) => current ? { ...current, items: [...current.items.filter((item) => item.id !== response.id), response].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : current);
       setText("");
       scrollToBottom(true);
     } catch (sendError) {

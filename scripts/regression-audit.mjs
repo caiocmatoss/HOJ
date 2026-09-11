@@ -21,6 +21,7 @@ const inviteToGroup = read("src/features/groups/InviteToGroupExperience.tsx");
 const groupChat = read("src/features/groups/GroupChatExperience.tsx");
 const chatInbox = read("src/features/chat/ChatInboxExperience.tsx");
 const directChat = read("src/features/chat/DirectChatExperience.tsx");
+const messagesResource = read("src/services/api/resources/messages.ts");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
 assert("groups is hidden from primary tab bar", /name="groups" options=\{\{ href: null \}\}/.test(tabs));
@@ -37,6 +38,11 @@ assert("InviteToGroup imports resources", inviteToGroup.includes("resources/grou
 assert("GroupChat uses query metadata and chat store", !groupChat.includes("useGroupStore") && groupChat.includes("resources/groups") && groupChat.includes("chat-store"));
 assert("ChatInbox uses social resources", !chatInbox.includes("useGroupStore") && chatInbox.includes("resources/groups") && chatInbox.includes("resources/friends"));
 assert("DirectChat avoids legacy friend loader", !directChat.includes("getFriends(") && directChat.includes("resources/friends"));
+assert("ChatInbox uses messaging resource", chatInbox.includes("resources/messages") && !chatInbox.includes("getDirectMessages") && !chatInbox.includes("getGroupMessages"));
+assert("DirectChat uses messaging resource", directChat.includes("resources/messages") && !directChat.includes("getDirectMessages"));
+assert("GroupChat uses messaging resource", groupChat.includes("resources/messages") && !groupChat.includes("getGroupMessages"));
+assert("messaging resource uses apiClient", messagesResource.includes("apiClient") && messagesResource.includes("apiClientWithMeta"));
+assert("messaging query keys are defined", read("src/services/api/query-keys.ts").includes("messageKeys") && messagesResource.includes("messageKeys"));
 assert("notification center is shell overlay only", !fs.existsSync(path.join(root, "src/app/notification-center.tsx")) && !fs.existsSync(path.join(root, "src/app/(main)/notification-center.tsx")) && tabs.includes("NotificationCenterExperience"));
 assert("explore opens notification center overlay", explore.includes("openNotificationCenter()") && explore.includes("Abrir notificações"));
 assert("legacy invites route redirects to explore", invitesRoute.includes("/(main)/explore"));

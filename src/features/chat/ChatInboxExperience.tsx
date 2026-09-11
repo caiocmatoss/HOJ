@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   FlatList,
@@ -14,13 +15,9 @@ import {
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import Svg, { Path } from "react-native-svg";
-import {
-  getDirectMessages,
-
-  getGroupMessages,
-  type ApiDirectMessage,
-
-} from "@/services/api";
+import type { DirectMessage, GroupMessage } from "@/services/api/resources/messages";
+import { listDirectMessages, listGroupMessages } from "@/services/api/resources/messages";
+import { messageKeys } from "@/services/api/query-keys";
 import { useFriendsQuery } from "@/services/api/resources/friends";
 import { useGroupsQuery } from "@/services/api/resources/groups";
 import {
@@ -32,10 +29,7 @@ import {
   onNewMessage,
   type DirectServerMessage,
 } from "@/services/socket";
-import {
-  useChatStore,
-  type DirectChatMessage,
-} from "@/store/chat-store";
+import type { DirectChatMessage } from "@/store/chat-store";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
@@ -81,191 +75,52 @@ function formatConversationTime(value: string) {
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
-function mapDirectMessage(message: ApiDirectMessage | DirectServerMessage): DirectChatMessage {
+function mapDirectMessage(message: DirectMessage | DirectServerMessage): DirectChatMessage {
   return { ...message };
 }
 
 export default function ChatInboxExperience() {
   const user = useUserStore((state) => state.user);
-  const directMessages = useChatStore((state) => state.directMessages);
-  const groupMessages = useChatStore((state) => state.messages);
-  const setDirectMessages = useChatStore((state) => state.setDirectMessages);
-  const addDirectMessage = useChatStore((state) => state.addDirectMessage);
-  const setMessages = useChatStore((state) => state.setMessages);
-  const addMessage = useChatStore((state) => state.addMessage);
   const groupsQuery = useGroupsQuery({ page: 1, limit: 100 });
   const groups = groupsQuery.data?.items ?? [];
-  const groupStoreLoading = groupsQuery.isLoading;
-  const presenceStatuses = usePresenceStore((state) => state.statuses);
-
   const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
   const friends = friendsQuery.data?.items ?? [];
-  const [loadingDirect, setLoadingDirect] = useState(false);
-  const [loadingGroups, setLoadingGroups] = useState(false);
+  const presenceStatuses = usePresenceStore((state) => state.statuses);
+  const queryClient = useQueryClient();
+  const directQueries = useQueries({ queries: friends.map((friend) => ({ queryKey: messageKeys.direct(friend.id, { page: 1, limit: 100 }), queryFn: () => listDirectMessages(friend.id, { page: 1, limit: 100 }) })) });
+  const groupQueries = useQueries({ queries: groups.map((group) => ({ queryKey: messageKeys.group(group.id, { page: 1, limit: 100 }), queryFn: () => listGroupMessages(group.id, { page: 1, limit: 100 }) })) });
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ConversationFilter>("all");
-  const [reloadKey, setReloadKey] = useState(0);
-
-  const loadDirectInbox = useCallback(async () => {
-    if (!user) return;
-
-    setLoadingDirect(true);
-    setError(null);
-
-    try {
-      const realFriends = friendsQuery.data?.items ?? [];
-
-      const histories = await Promise.allSettled(
-        realFriends.map(async (friend) => ({
-          friendId: friend.id,
-          messages: await getDirectMessages(friend.id),
-        })),
-      );
-
-      let failures = 0;
-      histories.forEach((result) => {
-        if (result.status === "rejected") {
-          failures += 1;
-          return;
-        }
-
-        setDirectMessages(
-          createDirectConversationId(user.id, result.value.friendId),
-          result.value.messages.map(mapDirectMessage),
-        );
-      });
-
-      if (failures > 0) {
-        setError("Algumas conversas não puderam ser atualizadas.");
-      }
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Não foi possível carregar suas conversas.",
-      );
-    } finally {
-      setLoadingDirect(false);
-    }
-  }, [setDirectMessages, user, friendsQuery.data]);
-
+  const directHistories = directQueries.map((item) => item.data?.items ?? []);
+  const groupHistories = groupQueries.map((item) => item.data?.items ?? []);
+  const loading = groupsQuery.isLoading || friendsQuery.isLoading || directQueries.some((item) => item.isLoading) || groupQueries.some((item) => item.isLoading);
   useEffect(() => {
-    void loadDirectInbox();
-  }, [loadDirectInbox, reloadKey]);
-
-  useEffect(() => {
-    if (groups.length === 0) return;
-    let active = true;
-
-    const loadHistories = async () => {
-      setLoadingGroups(true);
-      const histories = await Promise.allSettled(
-        groups.map(async (group) => ({
-          groupId: group.id,
-          messages: await getGroupMessages(group.id),
-        })),
-      );
-
-      if (!active) return;
-      let failures = 0;
-      histories.forEach((result) => {
-        if (result.status === "rejected") {
-          failures += 1;
-          return;
-        }
-        setMessages(result.value.groupId, result.value.messages);
-      });
-
-      if (failures > 0) setError("Alguns grupos não puderam ser atualizados.");
-      setLoadingGroups(false);
-    };
-
-    void loadHistories();
-    return () => {
-      active = false;
-    };
-  }, [groups, reloadKey, setMessages]);
-
+    const failed = [...directQueries, ...groupQueries].find((item) => item.error);
+    if (failed?.error) setError(failed.error instanceof Error ? failed.error.message : "Não foi possível atualizar suas conversas.");
+  }, [directQueries, groupQueries]);
   useEffect(() => {
     if (!user || friends.length === 0) return;
-    let active = true;
-
     const unsubscribe = onNewDirectMessage((message) => {
-      if (!active) return;
-      const belongsToUser = message.senderId === user.id || message.receiverId === user.id;
-      if (!belongsToUser) return;
-
+      if (message.senderId !== user.id && message.receiverId !== user.id) return;
       const otherId = message.senderId === user.id ? message.receiverId : message.senderId;
-      addDirectMessage(createDirectConversationId(user.id, otherId), mapDirectMessage(message));
+      queryClient.setQueryData(messageKeys.direct(otherId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: [...current.items.filter((item: DirectMessage) => item.id !== message.id), message] } : current);
     });
-
     void Promise.allSettled(friends.map((friend) => joinDirectConversation(friend.id)));
-
-    return () => {
-      active = false;
-      unsubscribe();
-      friends.forEach((friend) => leaveDirectConversation(friend.id));
-    };
-  }, [addDirectMessage, friends, user]);
-
+    return () => { unsubscribe(); friends.forEach((friend) => leaveDirectConversation(friend.id)); };
+  }, [friends, queryClient, user]);
   useEffect(() => {
     if (groups.length === 0) return;
-    const unsubscribe = onNewMessage((message) => addMessage(message.groupId, message));
+    const unsubscribe = onNewMessage((message) => queryClient.setQueryData(messageKeys.group(message.groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: [...current.items.filter((item: GroupMessage) => item.id !== message.id), message] } : current));
     void Promise.allSettled(groups.map((group) => joinGroup(group.id)));
-
-    return () => {
-      unsubscribe();
-      groups.forEach((group) => leaveGroup(group.id));
-    };
-  }, [addMessage, groups]);
-
+    return () => { unsubscribe(); groups.forEach((group) => leaveGroup(group.id)); };
+  }, [groups, queryClient]);
   const conversations = useMemo<Conversation[]>(() => {
     if (!user) return [];
-
-    const direct: Conversation[] = friends.flatMap((friend) => {
-      const conversationId = createDirectConversationId(user.id, friend.id);
-      const history = directMessages[conversationId] ?? [];
-      const lastMessage = history[history.length - 1];
-      if (!lastMessage) return [];
-
-      const online = (presenceStatuses[friend.id] ?? friend.status) === "ONLINE";
-      return [
-        {
-          avatar: friend.avatar,
-          id: friend.id,
-          lastMessage: lastMessage.text,
-          lastMessageAt: lastMessage.createdAt,
-          meta: online ? "Online" : "Offline",
-          name: friend.name,
-          online,
-          type: "direct" as const,
-          hasMessage: true,
-        },
-      ];
-    });
-
-    const group: Conversation[] = groups.flatMap((item) => {
-      const history = groupMessages[item.id] ?? [];
-      const lastMessage = history[history.length - 1];
-      return [
-        {
-          id: item.id,
-          lastMessage: lastMessage?.text ?? "Sem mensagens ainda",
-          lastMessageAt: lastMessage?.createdAt ?? item.createdAt,
-          hasMessage: Boolean(lastMessage),
-          meta: `${(item.members ?? []).length} ${(item.members ?? []).length === 1 ? "membro" : "membros"}`,
-          name: item.name,
-          type: "group" as const,
-        },
-      ];
-    });
-
-    return [...direct, ...group].sort(
-      (first, second) => getTimestamp(second.lastMessageAt) - getTimestamp(first.lastMessageAt),
-    );
-  }, [directMessages, friends, groupMessages, groups, presenceStatuses, user]);
-
+    const direct: Conversation[] = friends.flatMap((friend, index) => { const history = directHistories[index] as DirectMessage[]; const lastMessage = history[history.length - 1]; if (!lastMessage) return []; const online = (presenceStatuses[friend.id] ?? friend.status) === "ONLINE"; return [{ avatar: friend.avatar, id: friend.id, lastMessage: lastMessage.text, lastMessageAt: lastMessage.createdAt, meta: online ? "Online" : "Offline", name: friend.name, online, type: "direct" as const, hasMessage: true }]; });
+    const group: Conversation[] = groups.map((item, index) => { const history = groupHistories[index] as GroupMessage[]; const lastMessage = history[history.length - 1]; return { id: item.id, lastMessage: lastMessage?.text ?? "Sem mensagens ainda", lastMessageAt: lastMessage?.createdAt ?? item.createdAt, hasMessage: Boolean(lastMessage), meta: ((item.members ?? []).length) + " " + ((item.members ?? []).length === 1 ? "membro" : "membros"), name: item.name, type: "group" as const }; });
+    return [...direct, ...group].sort((a, b) => getTimestamp(b.lastMessageAt) - getTimestamp(a.lastMessageAt));
+  }, [directHistories, friends, groupHistories, groups, presenceStatuses, user]);
   const filteredConversations = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("pt-BR");
     return conversations.filter((conversation) => {
@@ -279,7 +134,6 @@ export default function ChatInboxExperience() {
     });
   }, [conversations, filter, query]);
 
-  const loading = loadingDirect || loadingGroups || groupStoreLoading;
   const directCount = conversations.filter((item) => item.type === "direct").length;
   const groupCount = conversations.filter((item) => item.type === "group").length;
 
@@ -341,7 +195,8 @@ export default function ChatInboxExperience() {
                   <Pressable
                     onPress={() => {
                       setError(null);
-                      setReloadKey((current) => current + 1);
+                      void groupsQuery.refetch();
+                      void friendsQuery.refetch();
                     }}
                   >
                     <Text style={styles.retryText}>Tentar novamente</Text>

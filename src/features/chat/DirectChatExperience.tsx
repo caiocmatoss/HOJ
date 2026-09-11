@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,15 +16,15 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { getDirectMessages } from "@/services/api";
 import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
+import { useDirectMessagesQuery, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
+import { messageKeys } from "@/services/api/query-keys";
 import {
   joinDirectConversation,
   leaveDirectConversation,
   onNewDirectMessage,
-  sendDirectSocketMessage,
 } from "@/services/socket";
-import { useChatStore, type DirectChatMessage } from "@/store/chat-store";
+import type { DirectChatMessage } from "@/store/chat-store";
 import Svg, { Circle, Path } from "react-native-svg";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
@@ -75,18 +76,17 @@ export default function DirectChatExperience() {
 
   const user = useUserStore((state) => state.user);
   const accessToken = useUserStore((state) => state.accessToken);
-  const directMessages = useChatStore((state) => state.directMessages);
-  const setDirectMessages = useChatStore((state) => state.setDirectMessages);
-  const addDirectMessage = useChatStore((state) => state.addDirectMessage);
   const presenceStatuses = usePresenceStore((state) => state.statuses);
 
   const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
   const friend = friendsQuery.data?.items.find((item) => item.id === friendId) ?? null;
   const [text, setText] = useState("");
-  const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messagesQuery = useDirectMessagesQuery(friendId, { page: 1, limit: 100 });
+  const sendMutation = useSendDirectMessageMutation();
+  const queryClient = useQueryClient();
+  const sending = sendMutation.isPending;
   const listRef = useRef<FlatList<DirectChatMessage>>(null);
 
   const conversationId = useMemo(() => {
@@ -94,18 +94,22 @@ export default function DirectChatExperience() {
     return createDirectConversationId(user.id, friendId);
   }, [friendId, user]);
 
-  const messages = conversationId ? directMessages[conversationId] ?? [] : [];
+  const messages = (messagesQuery.data?.items ?? []) as DirectChatMessage[];
 
   useEffect(() => {
-    if (!user || !friendId || !conversationId || !accessToken) {
-      setLoading(false);
+    if (messagesQuery.error) {
+      setError(messagesQuery.error instanceof Error ? messagesQuery.error.message : "Não foi possível carregar a conversa.");
+    }
+  }, [messagesQuery.error]);
+
+  useEffect(() => {
+    if (false) {
       return;
     }
 
     let cancelled = false;
 
     const loadConversation = async () => {
-      setLoading(true);
       setError(null);
 
       try {
@@ -113,8 +117,6 @@ export default function DirectChatExperience() {
         if (cancelled) return;
         if (!realFriend) return;
 
-        const response = await getDirectMessages(friendId);
-        if (!cancelled) setDirectMessages(conversationId, response);
       } catch (requestError) {
         if (!cancelled) {
           setError(
@@ -124,7 +126,6 @@ export default function DirectChatExperience() {
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
       }
     };
 
@@ -132,7 +133,7 @@ export default function DirectChatExperience() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, conversationId, friendId, setDirectMessages, user, friendsQuery.data]);
+  }, []);
 
   useEffect(() => {
     if (!user || !friendId || !conversationId || !accessToken) return;
@@ -152,7 +153,11 @@ export default function DirectChatExperience() {
             (message.senderId === friendId && message.receiverId === user.id);
 
           if (belongsToConversation) {
-            addDirectMessage(conversationId, message);
+            queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => {
+              if (!current) return current;
+              const items = [...current.items.filter((item: DirectMessage) => item.id !== message.id), message].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+              return { ...current, items };
+            });
           }
         });
 
@@ -176,7 +181,7 @@ export default function DirectChatExperience() {
       unsubscribe?.();
       leaveDirectConversation(friendId);
     };
-  }, [accessToken, addDirectMessage, conversationId, friendId, user]);
+  }, [accessToken, conversationId, friendId, queryClient, user]);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -194,12 +199,15 @@ export default function DirectChatExperience() {
       return;
     }
 
-    setSending(true);
     setError(null);
 
     try {
-      const message = await sendDirectSocketMessage(friendId, trimmedText);
-      addDirectMessage(conversationId, message);
+      const message = await sendMutation.mutateAsync({ userId: friendId, text: trimmedText });
+      queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => {
+        if (!current) return current;
+        const items = [...current.items.filter((item: DirectMessage) => item.id !== message.id), message].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        return { ...current, items };
+      });
       setText("");
     } catch (sendError) {
       setError(
@@ -208,7 +216,6 @@ export default function DirectChatExperience() {
           : "Não foi possível enviar a mensagem.",
       );
     } finally {
-      setSending(false);
     }
   };
 
@@ -216,7 +223,7 @@ export default function DirectChatExperience() {
     return <InvalidConversation onBack={handleBack} />;
   }
 
-  if (loading && !friend) {
+  if (messagesQuery.isLoading && !friend) {
     return <ConversationLoading onBack={handleBack} />;
   }
 

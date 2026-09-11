@@ -155,7 +155,7 @@ export function useDeleteAvatarMutation() {
   const client = useQueryClient();
   return useMutation({ mutationFn: deleteAvatar, onSuccess: async () => { const user = await getMe(); client.setQueryData(profileQueryKeys.me, user); syncSelfUser(user); } });
 }
-export function useNotificationPreferencesQuery() { return useQuery({ queryKey: profileQueryKeys.notificationPreferences, queryFn: getNotificationPreferences }); }
+export function useNotificationPreferencesQuery(enabled = true) { return useQuery({ queryKey: profileQueryKeys.notificationPreferences, queryFn: getNotificationPreferences, enabled }); }
 export function useUpdateNotificationPreferencesMutation() {
   const client = useQueryClient();
   return useMutation({ mutationFn: updateNotificationPreferences, onSuccess: (value) => client.setQueryData(profileQueryKeys.notificationPreferences, value) });

@@ -4,14 +4,14 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { BrandMark } from "@/components/ui/BrandMark";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { useNotificationStore } from "@/store/notification-store";
+import { useUnreadNotificationCountQuery } from "@/services/api/resources/notifications";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
 
 export function HomeHeaderExperience() {
   const user = useUserStore((state) => state.user);
-  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const unreadCount = useUnreadNotificationCountQuery().data ?? 0;
   const statuses = usePresenceStore((state) => state.statuses);
   const online = user ? (statuses[user.id] ?? user.status) === "ONLINE" : false;
 

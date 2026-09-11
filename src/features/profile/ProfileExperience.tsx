@@ -26,6 +26,7 @@ import { useFavoriteStore } from "@/store/favorite-store";
 import { useGroupStore } from "@/store/group-store";
 import { useLocationStore } from "@/store/location-store";
 import { useNotificationStore } from "@/store/notification-store";
+import { useUnreadNotificationCountQuery } from "@/services/api/resources/notifications";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
@@ -48,7 +49,7 @@ export default function ProfileExperience() {
   const presenceStatuses = usePresenceStore((state) => state.statuses);
   const latitude = useLocationStore((state) => state.latitude);
   const longitude = useLocationStore((state) => state.longitude);
-  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const unreadCount = useUnreadNotificationCountQuery().data ?? 0;
   const clearNotifications = useNotificationStore((state) => state.clearNotifications);
   const clearAllChats = useChatStore((state) => state.clearAllChats);
 

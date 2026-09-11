@@ -6,6 +6,7 @@ import {
   configureNotifications,
   getNotificationPermissionStatus,
 } from "@/services/notifications";
+import { Platform } from "react-native";
 
 import {
   useNotificationStore,
@@ -13,6 +14,10 @@ import {
 
 import { joinNotifications, leaveNotifications, onNewNotification } from "@/services/socket";
 import { useUserStore } from "@/store/user-store";
+import { useQueryClient } from "@tanstack/react-query";
+import { notificationKeys } from "@/services/api/query-keys";
+import { useNotificationPreferencesQuery } from "@/services/api/resources/profile";
+import { registerPushDeviceIfEnabled } from "@/services/push-device-registration";
 
 export default function NotificationManager() {
   const setPermissionStatus =
@@ -39,10 +44,9 @@ export default function NotificationManager() {
         state.setError,
     );
 
-  const addNotification = useNotificationStore((state) => state.addNotification);
-  const loadNotifications = useNotificationStore((state) => state.loadNotifications);
-  const clearNotifications = useNotificationStore((state) => state.clearNotifications);
   const accessToken = useUserStore((state) => state.accessToken);
+  const queryClient = useQueryClient();
+  const preferencesQuery = useNotificationPreferencesQuery(Boolean(accessToken));
 
   useEffect(() => {
     let mounted = true;
@@ -123,13 +127,13 @@ export default function NotificationManager() {
 
   useEffect(() => {
     if (!accessToken) {
-      clearNotifications();
       return;
     }
 
     let active = true;
-    void loadNotifications();
-    const cleanup = onNewNotification(addNotification);
+    const cleanup = onNewNotification(() => {
+      void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+    });
     void joinNotifications().catch((error: unknown) => {
       if (active) {
         // A falha transitória do canal de notificações não deve bloquear a UI
@@ -145,7 +149,12 @@ export default function NotificationManager() {
       cleanup();
       leaveNotifications();
     };
-  }, [accessToken, addNotification, clearNotifications, loadNotifications]);
+  }, [accessToken, queryClient]);
+
+  useEffect(() => {
+    if (!accessToken || Platform.OS === "web" || preferencesQuery.data?.pushEnabled !== true) return;
+    void registerPushDeviceIfEnabled(true).catch(() => undefined);
+  }, [accessToken, preferencesQuery.data?.pushEnabled]);
 
   return null;
 }

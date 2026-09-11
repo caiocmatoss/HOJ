@@ -42,7 +42,12 @@ assert("explore opens notification center overlay", explore.includes("openNotifi
 assert("legacy invites route redirects to explore", invitesRoute.includes("/(main)/explore"));
 assert("notification preferences remain separate", read("src/app/(main)/notifications.tsx").includes("FigmaNotificationsExperience") && notificationCenter.includes("useReceivedInvitesQuery"));assert("active Friends uses React Query resource", friends.includes("useFriendsQuery") && !friends.includes("getFriends"));
 assert("CreateGroup has no group store authority", !createGroup.includes("useGroupStore"));
-assert("Notification Center split is explicit", notificationCenter.includes("useNotificationStore") && notificationCenter.includes("useReceivedInvitesQuery") && !notificationCenter.includes("useInviteStore"));
+assert("Notification Center uses notifications resource", notificationCenter.includes("resources/notifications") && notificationCenter.includes("useNotificationsQuery") && notificationCenter.includes("useReceivedInvitesQuery") && !notificationCenter.includes("useNotificationStore"));
+assert("Notification Center unread count is backend-backed", notificationCenter.includes("useUnreadNotificationCountQuery"));
+assert("Notification Center read mutation is backend-backed", notificationCenter.includes("useMarkNotificationReadMutation"));
+assert("push device resource uses apiClient", read("src/services/api/resources/push-devices.ts").includes("apiClient") && read("src/services/api/resources/push-devices.ts").includes("/notifications/devices"));
+assert("push registration is native guarded", read("src/services/push-device-registration.native.ts").includes("getExpoPushTokenAsync") && read("src/services/push-device-registration.web.ts").includes("registerPushDeviceIfEnabled"));
+assert("notification center has no notification store authority", !notificationCenter.includes("useNotificationStore") && !notificationCenter.includes("loadNotifications"));
 assert("notification center has no demo data", !["Lara", "Mateus", "Mariana F.", "Ricardo A.", "Clos Lounge", "Primavera Sound SP"].some((token) => notificationCenter.includes(token)));
 assert("imported FSQ occupancy requires real capacity", venueState.includes("occupancyPercent") && venueState.includes("Number.isFinite(percentage)") && venueState.includes("Movimento indisponível"));
 assert("imported FSQ availability is neutral", venueState.includes('venue.externalProvider === "FSQ_OS"') && venueState.includes("Horário indisponível"));

@@ -17,7 +17,8 @@ import {
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
-import { useDeleteDirectMessageMutation, useDirectMessagesQuery, useDirectReadStateQuery, useEditDirectMessageMutation, useMarkChatReadMutation, useSendDirectMessageMutation, useSetDirectMessageReactionMutation, useRemoveDirectMessageReactionMutation, type DirectMessage, type ReactionType } from "@/services/api/resources/messages";
+import { useGroupsQuery } from "@/services/api/resources/groups";
+import { useDeleteDirectMessageMutation, useDirectMessagesQuery, useDirectReadStateQuery, useEditDirectMessageMutation, useForwardDirectMessageMutation, useMarkChatReadMutation, useSendDirectMessageMutation, useSetDirectMessageReactionMutation, useRemoveDirectMessageReactionMutation, type DirectMessage, type ReactionType } from "@/services/api/resources/messages";
 import { messageKeys } from "@/services/api/query-keys";
 import {
   joinDirectConversation,
@@ -39,6 +40,7 @@ import { colors, fonts, radii } from "@/theme/tokens";
 import { MAIN_TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
 import { confirmDelete } from "./confirmDelete";
 import { MessageActionMenu, MessageContextActions } from "./MessageContextActions";
+import { ForwardPicker, type ForwardTarget } from "./ForwardPicker";
 
 const CHAT_COMPOSER_TAB_GAP = 8;
 
@@ -96,6 +98,7 @@ export default function DirectChatExperience() {
   const presenceStatuses = usePresenceStore((state) => state.statuses);
 
   const friendsQuery = useFriendsQuery({ page: 1, limit: 100 });
+  const groupsQuery = useGroupsQuery({ page: 1, limit: 100 });
   const friend = friendsQuery.data?.items.find((item) => item.id === friendId) ?? null;
   const [text, setText] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -107,6 +110,7 @@ export default function DirectChatExperience() {
   const deleteMutation = useDeleteDirectMessageMutation();
   const setReactionMutation = useSetDirectMessageReactionMutation();
   const removeReactionMutation = useRemoveDirectMessageReactionMutation();
+  const forwardMutation = useForwardDirectMessageMutation();
   const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
   const sending = sendMutation.isPending;
@@ -120,6 +124,7 @@ export default function DirectChatExperience() {
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 24, y: 180 });
+  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
 
   const conversationId = useMemo(() => {
     if (!user || !friendId) return null;
@@ -132,6 +137,8 @@ export default function DirectChatExperience() {
   const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setReplyingToId(null); setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
   const selectReplyMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(null); setEditingOriginalText(""); setReplyingToId(message.id); } };
   const selectReaction = (type: ReactionType) => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (!message || message.deletedAt) return; void (message.myReaction === type ? removeReactionMutation.mutateAsync({ messageId: message.id }) : setReactionMutation.mutateAsync({ messageId: message.id, type })); };
+  const selectForward = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) setForwardMessageId(message.id); };
+  const handleForwardTarget = async (target: ForwardTarget) => { if (!forwardMessageId || forwardMutation.isPending) return; try { await forwardMutation.mutateAsync({ messageId: forwardMessageId, target }); setForwardMessageId(null); } catch (forwardError) { setError(forwardError instanceof Error ? forwardError.message : "Não foi possível encaminhar a mensagem."); } };
 
   useEffect(() => {
     const last = messagesQuery.data?.items.at(-1);
@@ -422,6 +429,7 @@ export default function DirectChatExperience() {
                         sameSenderNext && styles.groupedBubble,
                       ]}
                     >
+                      {item.isForwarded && !item.deletedAt ? <Text style={styles.forwardedLabel}>↪ Encaminhada</Text> : null}
                       {item.replyTo ? <View style={styles.replyQuote}><Text style={styles.replyQuoteAuthor}>{item.replyTo.authorName ?? "Mensagem"}</Text><Text numberOfLines={2} style={styles.replyQuoteText}>{item.replyTo.text ?? "Mensagem excluída"}</Text></View> : null}
                       <Text style={[styles.messageText, isMine && styles.myMessageText, item.deletedAt && styles.deletedMessageText]}>
                         {item.deletedAt ? "Mensagem excluída" : item.text}
@@ -456,7 +464,8 @@ export default function DirectChatExperience() {
             }
           />
 
-          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.senderId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.senderId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onForward={selectForward} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          <ForwardPicker visible={Boolean(forwardMessageId)} friends={friendsQuery.data?.items ?? []} groups={groupsQuery.data?.items ?? []} onSelect={(target) => void handleForwardTarget(target)} onClose={() => setForwardMessageId(null)} />
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
             {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {replyingToId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Respondendo a {messages.find((item) => item.id === replyingToId)?.sender?.name ?? friend.name}</Text><Text numberOfLines={1} style={styles.editBarText}>{messages.find((item) => item.id === replyingToId)?.text ?? "Mensagem excluída"}</Text></View><Pressable accessibilityLabel="Cancelar resposta" onPress={() => setReplyingToId(null)}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
@@ -611,6 +620,7 @@ const styles = StyleSheet.create({
   replyQuote: { borderLeftColor: colors.textMuted, borderLeftWidth: 2, marginBottom: 6, paddingLeft: 7 },
   replyQuoteAuthor: { color: colors.textMuted, fontSize: 10, fontWeight: "600" },
   replyQuoteText: { color: colors.textMuted, fontSize: 10 },
+  forwardedLabel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10, marginBottom: 3 },
   reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 },
   reactionPill: { color: colors.textMuted, fontSize: 11 },
   messageActions: { flexDirection: "row", gap: 8, marginTop: 4 },

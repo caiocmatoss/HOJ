@@ -121,6 +121,13 @@ assert("reply create resource accepts replyToId", messagesResource.includes('rep
 assert("single reply state and composer banner", directChat.includes('replyingToId') && groupChat.includes('replyingToId') && directChat.includes('Respondendo a') && groupChat.includes('Respondendo a'));
 assert("reply and edit are mutually exclusive", directChat.includes('setReplyingToId(null)') && groupChat.includes('setReplyingToId(null)') && directChat.includes('setEditingId(null)') && groupChat.includes('setEditingId(null)'));
 assert("reply quote is one level and deleted-safe", messagesResource.includes('replyTo?: ReplyPreview') && directChat.includes('item.replyTo.text') && groupChat.includes('item.replyTo.text'));
+assert("forward resources use destination ids", messagesResource.includes("forwardDirectMessageResource") && messagesResource.includes("forwardGroupMessageResource") && messagesResource.includes("targetType") && messagesResource.includes("targetId"));
+assert("forward resource never trusts copied text", !messagesResource.includes("isForwarded: true") && !messagesResource.includes("forwardedText"));
+assert("forwarded message type is explicit", messagesResource.includes("isForwarded?: boolean"));
+assert("context menu exposes Forward", contextActions.includes("Encaminhar mensagem") && contextActions.includes("onForward"));
+assert("forward picker offers friends and groups", read("src/features/chat/ForwardPicker.tsx").includes("targetType: \"DIRECT\"") && read("src/features/chat/ForwardPicker.tsx").includes("targetType: \"GROUP\""));
+assert("forward picker is used by both chats", directChat.includes("<ForwardPicker") && groupChat.includes("<ForwardPicker"));
+assert("forwarded label hides source metadata", directChat.includes("↪ Encaminhada") && groupChat.includes("↪ Encaminhada") && !messagesResource.includes("sourceMessageId"));
 
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]

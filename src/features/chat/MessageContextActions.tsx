@@ -33,8 +33,8 @@ export function MessageContextActions({ enabled, own = false, children, onOpen }
   return <Pressable accessibilityRole="button" accessibilityLabel="Ações da mensagem" onLongPress={() => onOpen({ x: 24, y: 180 })} ref={targetRef} style={[styles.target, own ? styles.ownTarget : styles.otherTarget]}>{children}</Pressable>;
 }
 
-type MenuProps = { position: Position; own?: boolean; myReaction?: ReactionType | null; reactions?: ReactionSummary[]; onReaction?: (type: ReactionType) => void; onReply?: () => void; onEdit: () => void; onDelete: () => void; onCancel: () => void };
-export function MessageActionMenu({ position, own = false, myReaction, onReaction, onReply, onEdit, onDelete, onCancel }: MenuProps) {
+type MenuProps = { position: Position; own?: boolean; myReaction?: ReactionType | null; reactions?: ReactionSummary[]; onReaction?: (type: ReactionType) => void; onReply?: () => void; onForward?: () => void; onEdit: () => void; onDelete: () => void; onCancel: () => void };
+export function MessageActionMenu({ position, own = false, myReaction, onReaction, onReply, onForward, onEdit, onDelete, onCancel }: MenuProps) {
   const menuRef = useRef<View>(null);
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return;
@@ -54,6 +54,7 @@ export function MessageActionMenu({ position, own = false, myReaction, onReactio
   return <View ref={menuRef} accessibilityRole="menu" style={[styles.menu, { left: safePosition.x, top: safePosition.y }]}>
     <View style={styles.reactions}>{types.map(([type, emoji]) => <Pressable key={type} accessibilityLabel={`Reagir ${type}`} onPress={() => onReaction?.(type)} style={[styles.reaction, myReaction === type && styles.reactionSelected]}><Text style={styles.emoji}>{emoji}</Text></Pressable>)}</View>
     <Pressable accessibilityLabel="Responder mensagem" accessibilityRole="menuitem" onPress={onReply} style={styles.item}><Text style={styles.label}>Responder</Text></Pressable>
+    <Pressable accessibilityLabel="Encaminhar mensagem" accessibilityRole="menuitem" onPress={onForward} style={styles.item}><Text style={styles.label}>Encaminhar</Text></Pressable>
     {own ? <Pressable accessibilityLabel="Editar mensagem" accessibilityRole="menuitem" onPress={onEdit} style={styles.item}><Text style={styles.label}>Editar</Text></Pressable> : null}
     {own ? <Pressable accessibilityLabel="Excluir mensagem" accessibilityRole="menuitem" onPress={onDelete} style={styles.item}><Text style={styles.label}>Excluir</Text></Pressable> : null}
     <Pressable accessibilityLabel="Cancelar ações" accessibilityRole="menuitem" onPress={onCancel} style={styles.item}><Text style={styles.label}>Cancelar</Text></Pressable>

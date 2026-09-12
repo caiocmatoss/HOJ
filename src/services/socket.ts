@@ -24,6 +24,7 @@ export type ServerMessage = {
   updatedAt?: string;
   editedAt?: string | null;
   deletedAt?: string | null;
+  isForwarded?: boolean;
   reactions?: Array<{ type: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE"; count: number }>;
   myReaction?: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE" | null;
   replyTo?: { id: string; userId?: string; senderId?: string; authorName?: string | null; text: string | null; deletedAt: string | null } | null;
@@ -45,6 +46,7 @@ export type DirectServerMessage = {
   updatedAt?: string;
   editedAt?: string | null;
   deletedAt?: string | null;
+  isForwarded?: boolean;
   reactions?: Array<{ type: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE"; count: number }>;
   myReaction?: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE" | null;
   replyTo?: { id: string; userId?: string; senderId?: string; authorName?: string | null; text: string | null; deletedAt: string | null } | null;

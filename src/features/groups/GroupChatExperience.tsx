@@ -15,26 +15,29 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, type GroupMessage } from "@/services/api/resources/messages";
+import { useDeleteGroupMessageMutation, useEditGroupMessageMutation, useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, type GroupMessage } from "@/services/api/resources/messages";
 import { useGroupQuery } from "@/services/api/resources/groups";
-import { emitGroupTyping, joinGroup, leaveGroup, onGroupTyping, onNewMessage, sendSocketMessage } from "@/services/socket";
+import { emitGroupTyping, joinGroup, leaveGroup, onGroupTyping, onMessageDeleted, onMessageUpdated, onNewMessage, sendSocketMessage } from "@/services/socket";
 import type { ChatMessage } from "@/store/chat-store";
+type LifecycleChatMessage = ChatMessage & { editedAt?: string | null; deletedAt?: string | null };
 import { useQueryClient } from "@tanstack/react-query";
 import { messageKeys } from "@/services/api/query-keys";
 
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
 import { MAIN_TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
+import { confirmDelete } from "../chat/confirmDelete";
+import { MessageActionMenu, MessageContextActions } from "../chat/MessageContextActions";
 
 const CHAT_COMPOSER_TAB_GAP = 8;
 import Svg, { Path } from "react-native-svg";
 
-function normalizeMessage(message: GroupMessage): ChatMessage {
+function normalizeMessage(message: GroupMessage): LifecycleChatMessage {
   return {
     createdAt: message.createdAt,
     groupId: message.groupId,
     id: message.id,
-    text: message.text,
+    text: message.text ?? "",
     updatedAt: message.updatedAt,
     user: message.user
       ? {
@@ -45,6 +48,8 @@ function normalizeMessage(message: GroupMessage): ChatMessage {
         }
       : undefined,
     userId: message.userId,
+    editedAt: message.editedAt,
+    deletedAt: message.deletedAt,
   };
 }
 
@@ -83,6 +88,12 @@ export default function GroupChatExperience() {
   const groupQuery = useGroupQuery(groupId);
   const messagesQuery = useGroupMessagesQuery(groupId, { page: 1, limit: 100 });
   const sendMutation = useSendGroupMessageMutation();
+  const editMutation = useEditGroupMessageMutation();
+  const deleteMutation = useDeleteGroupMessageMutation();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingOriginalText, setEditingOriginalText] = useState("");
+  const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 24, y: 180 });
   const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
 
@@ -93,7 +104,7 @@ export default function GroupChatExperience() {
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const listRef = useRef<FlatList<LifecycleChatMessage>>(null);
   const processedMessageIds = useRef(new Set<string>());
   const markedReadId = useRef<string | null>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,6 +113,9 @@ export default function GroupChatExperience() {
 
   const group = groupQuery.data ?? null;
   const messages = useMemo(() => (messagesQuery.data?.items ?? []).map(normalizeMessage), [messagesQuery.data]);
+  const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
+  const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
+  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
 
   useEffect(() => {
     const last = messagesQuery.data?.items.at(-1);
@@ -135,6 +149,8 @@ export default function GroupChatExperience() {
 
     let active = true;
     let unsubscribe: (() => void) | null = null;
+    let unsubscribeUpdated: (() => void) | null = null;
+    let unsubscribeDeleted: (() => void) | null = null;
 
     const connect = async () => {
       setConnecting(true);
@@ -147,6 +163,8 @@ export default function GroupChatExperience() {
           queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: { items: GroupMessage[]; page: number; limit: number; totalCount: number; totalPages: number } | undefined) => current ? { ...current, items: [...current.items.filter((item) => item.id !== message.id), message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : current);
           scrollToBottom(true);
         });
+        unsubscribeUpdated = onMessageUpdated((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item) } : current); });
+      unsubscribeDeleted = onMessageDeleted((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (activeContextMessageId === message.id) closeContextMenu(); });
         await joinGroup(groupId);
       } catch (socketError) {
         if (active) {
@@ -165,10 +183,12 @@ export default function GroupChatExperience() {
     return () => {
       active = false;
       unsubscribe?.();
+      unsubscribeUpdated?.();
+      unsubscribeDeleted?.();
       leaveGroup(groupId);
       processedMessageIds.current.clear();
     };
-  }, [accessToken, groupId, queryClient, scrollToBottom]);
+  }, [accessToken, editingId, groupId, queryClient, scrollToBottom]);
 
   useEffect(() => {
     if (loadingMessages || messages.length === 0) return;
@@ -200,9 +220,12 @@ export default function GroupChatExperience() {
     }
   };
 
+  const handleEdit = async () => { if (!editingId || !text.trim() || !groupId) return; await editMutation.mutateAsync({ groupId, messageId: editingId, text: text.trim() }); setEditingId(null); setEditingOriginalText(""); setText(""); };
+  const handleDelete = (messageId: string) => { confirmDelete(() => { if (editingId === messageId) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (groupId) void deleteMutation.mutateAsync({ groupId, messageId }); }); };
+
   const handleTextChange = (value: string) => {
     setText(value);
-    if (!groupId) return;
+    if (!groupId || editingId) return;
     if (typingTimer.current) clearTimeout(typingTimer.current);
     if (!value.trim()) { emitGroupTyping(groupId, false); return; }
     emitGroupTyping(groupId, true);
@@ -326,6 +349,7 @@ export default function GroupChatExperience() {
                         )
                       ) : null}
 
+                      <MessageContextActions enabled={isMine && !item.deletedAt} own={isMine} onOpen={(position) => openContextMenu(item.id, position)}>
                       <View
                         style={[
                           styles.bubble,
@@ -336,18 +360,20 @@ export default function GroupChatExperience() {
                         {!isMine && startsSequence ? (
                           <Text style={styles.senderName}>{senderName}</Text>
                         ) : null}
-                        <Text style={[styles.messageText, isMine && styles.myMessageText]}>
-                          {item.text}
+                      <Text style={[styles.messageText, isMine && styles.myMessageText, item.deletedAt && styles.deletedMessageText]}>
+                        {item.deletedAt ? "Mensagem excluída" : item.text}
                         </Text>
                         <View style={styles.messageMeta}>
                           <Text style={[styles.messageTime, isMine && styles.myMessageTime]}>
                             {formatMessageTime(item.createdAt)}
                           </Text>
-                          {isMine ? (
+                        {isMine ? (
                             <Ionicons color="#665312" name="checkmark-done" size={13} />
-                          ) : null}
-                        </View>
+                        ) : null}
                       </View>
+                      {item.editedAt && !item.deletedAt ? <Text style={styles.editedLabel}>Editada</Text> : null}
+                      </View>
+                      </MessageContextActions>
                     </View>
                   </>
                 );
@@ -367,8 +393,10 @@ export default function GroupChatExperience() {
             />
           )}
 
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
-            {typingLabel ? <Text style={styles.typingIndicator}>{typingLabel}</Text> : null}
+            {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
+            {typingLabel && !editingId ? <Text style={styles.typingIndicator}>{typingLabel}</Text> : null}
             <View style={styles.composer}>
               <TextInput
                 accessibilityLabel="Mensagem para o grupo"
@@ -376,7 +404,7 @@ export default function GroupChatExperience() {
                 maxLength={2000}
                 multiline
                 onChangeText={handleTextChange}
-                onBlur={() => emitGroupTyping(groupId, false)}
+                onBlur={() => { if (!editingId) emitGroupTyping(groupId, false); }}
                 onSubmitEditing={() => {
                   if (Platform.OS === "web" && !text.includes("\n")) void handleSend();
                 }}
@@ -386,10 +414,10 @@ export default function GroupChatExperience() {
                 value={text}
               />
               <Pressable
-                accessibilityLabel="Enviar mensagem"
+                accessibilityLabel={editingId ? "Salvar edição" : "Enviar mensagem"}
                 accessibilityRole="button"
                 disabled={!text.trim() || sending}
-                onPress={() => void handleSend()}
+                onPress={() => void (editingId ? handleEdit() : handleSend())}
                 style={({ pressed }) => [
                   styles.sendButton,
                   !text.trim() && styles.sendButtonEmpty,
@@ -484,7 +512,7 @@ const styles = StyleSheet.create({
   messageRow: { alignItems: "flex-start", flexDirection: "row", gap: 7, marginBottom: 7, width: "100%" },
   myMessageRow: { justifyContent: "flex-end" },
   avatarSpacer: { height: 30, width: 30 },
-  bubble: { borderRadius: 19, maxWidth: "78%", paddingBottom: 7, paddingHorizontal: 13, paddingTop: 8 },
+  bubble: { borderRadius: 19, flexShrink: 0, maxWidth: "100%", paddingBottom: 7, paddingHorizontal: 13, paddingTop: 8 },
   groupedBubble: { marginBottom: -3 },
   otherBubble: { backgroundColor: colors.elevated, borderColor: colors.border, borderWidth: 1 },
   myBubble: { backgroundColor: colors.brand },
@@ -494,11 +522,20 @@ const styles = StyleSheet.create({
   messageMeta: { alignItems: "center", alignSelf: "flex-end", flexDirection: "row", gap: 3, marginTop: 3 },
   messageTime: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 8 },
   myMessageTime: { color: "#665312" },
+  deletedMessageText: { color: colors.textMuted, fontStyle: "italic" },
+  editedLabel: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9, marginTop: 2 },
+  messageActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  actionText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9 },
   emptyConversation: { alignItems: "center", paddingHorizontal: 18 },
   emptyIcon: { alignItems: "center", backgroundColor: colors.brandSoft, borderRadius: 32, height: 64, justifyContent: "center", width: 64 },
   emptyTitle: { color: colors.text, fontFamily: fonts.display, fontSize: 25, marginTop: 18 },
   emptyText: { color: colors.textSecondary, fontFamily: fonts.regular, fontSize: 12, lineHeight: 18, marginTop: 7, maxWidth: 300, textAlign: "center" },
   composerArea: { backgroundColor: colors.background, borderTopColor: colors.border, borderTopWidth: 1, paddingBottom: 0, paddingHorizontal: 12, paddingTop: 9 },
+  editBar: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", marginBottom: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  editBarCopy: { flex: 1, minWidth: 0 },
+  editBarTitle: { color: colors.brand, fontFamily: fonts.semibold, fontSize: 10 },
+  editBarText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginTop: 2 },
+  editBarCancel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10, marginLeft: 10 },
   typingIndicator: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginBottom: 5, marginLeft: 5 },
   composer: { alignItems: "flex-end", backgroundColor: colors.elevated, borderColor: colors.borderStrong, borderRadius: radii.large, borderWidth: 1, flexDirection: "row", minHeight: 50, paddingBottom: 5, paddingLeft: 14, paddingRight: 5, paddingTop: 5 },
   input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19, maxHeight: 110, minHeight: 39, paddingHorizontal: 0, paddingVertical: 9 },

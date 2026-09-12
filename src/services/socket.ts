@@ -22,6 +22,8 @@ export type ServerMessage = {
   text: string;
   createdAt: string;
   updatedAt?: string;
+  editedAt?: string | null;
+  deletedAt?: string | null;
 
   user?: {
     id: string;
@@ -38,6 +40,8 @@ export type DirectServerMessage = {
   text: string;
   createdAt: string;
   updatedAt?: string;
+  editedAt?: string | null;
+  deletedAt?: string | null;
 
   sender?: {
     id: string;
@@ -128,6 +132,8 @@ type ServerToClientEvents = {
   "message:sent": (
     data: ServerMessage,
   ) => void;
+  "message:updated": (data: ServerMessage) => void;
+  "message:deleted": (data: ServerMessage) => void;
 
   /* -------------------------
    * CHAT PRIVADO
@@ -156,6 +162,8 @@ type ServerToClientEvents = {
   "direct:message:sent": (
     message: DirectServerMessage,
   ) => void;
+  "direct:message:updated": (message: DirectServerMessage) => void;
+  "direct:message:deleted": (message: DirectServerMessage) => void;
   "direct:typing": (data: DirectTypingData) => void;
   "direct:read": (data: DirectReadData) => void;
   "chat:typing": (data: GroupTypingData) => void;
@@ -2016,6 +2024,10 @@ export function emitGroupTyping(groupId: string, isTyping: boolean): void { if (
 export function onDirectTyping(callback: (data: DirectTypingData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:typing", callback); return () => currentSocket.off("direct:typing", callback); }
 export function onDirectRead(callback: (data: DirectReadData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:read", callback); return () => currentSocket.off("direct:read", callback); }
 export function onGroupTyping(callback: (data: GroupTypingData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("chat:typing", callback); return () => currentSocket.off("chat:typing", callback); }
+export function onDirectMessageUpdated(callback: (message: DirectServerMessage) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:message:updated", callback); return () => currentSocket.off("direct:message:updated", callback); }
+export function onDirectMessageDeleted(callback: (message: DirectServerMessage) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:message:deleted", callback); return () => currentSocket.off("direct:message:deleted", callback); }
+export function onMessageUpdated(callback: (message: ServerMessage) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("message:updated", callback); return () => currentSocket.off("message:updated", callback); }
+export function onMessageDeleted(callback: (message: ServerMessage) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("message:deleted", callback); return () => currentSocket.off("message:deleted", callback); }
 
 /* =========================================================
  * LISTENERS DE CHAT DE GRUPO

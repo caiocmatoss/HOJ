@@ -17,7 +17,7 @@ import {
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
-import { useDirectMessagesQuery, useDirectReadStateQuery, useMarkChatReadMutation, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
+import { useDeleteDirectMessageMutation, useDirectMessagesQuery, useDirectReadStateQuery, useEditDirectMessageMutation, useMarkChatReadMutation, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
 import { messageKeys } from "@/services/api/query-keys";
 import {
   joinDirectConversation,
@@ -26,13 +26,18 @@ import {
   onDirectRead,
   onDirectTyping,
   emitDirectTyping,
+  onDirectMessageUpdated,
+  onDirectMessageDeleted,
 } from "@/services/socket";
 import type { DirectChatMessage } from "@/store/chat-store";
+type LifecycleDirectChatMessage = DirectChatMessage & { editedAt?: string | null; deletedAt?: string | null };
 import Svg, { Circle, Path } from "react-native-svg";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii } from "@/theme/tokens";
 import { MAIN_TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
+import { confirmDelete } from "./confirmDelete";
+import { MessageActionMenu, MessageContextActions } from "./MessageContextActions";
 
 const CHAT_COMPOSER_TAB_GAP = 8;
 
@@ -96,28 +101,37 @@ export default function DirectChatExperience() {
   const messagesQuery = useDirectMessagesQuery(friendId, { page: 1, limit: 100 });
   const readStateQuery = useDirectReadStateQuery(friendId);
   const sendMutation = useSendDirectMessageMutation();
+  const editMutation = useEditDirectMessageMutation();
+  const deleteMutation = useDeleteDirectMessageMutation();
   const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
   const sending = sendMutation.isPending;
-  const listRef = useRef<FlatList<DirectChatMessage>>(null);
+  const listRef = useRef<FlatList<LifecycleDirectChatMessage>>(null);
   const markedReadId = useRef<string | null>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remoteTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [remoteTyping, setRemoteTyping] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingOriginalText, setEditingOriginalText] = useState("");
+  const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 24, y: 180 });
 
   const conversationId = useMemo(() => {
     if (!user || !friendId) return null;
     return createDirectConversationId(user.id, friendId);
   }, [friendId, user]);
 
-  const messages = (messagesQuery.data?.items ?? []) as DirectChatMessage[];
+  const messages = (messagesQuery.data?.items ?? []) as LifecycleDirectChatMessage[];
+  const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
+  const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
+  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
 
   useEffect(() => {
     const last = messagesQuery.data?.items.at(-1);
     if (friendId && last && markedReadId.current !== last.id) { markedReadId.current = last.id; markReadMutation.mutate({ threadType: "DIRECT", threadKey: friendId, messageId: last.id }); }
   }, [friendId, markReadMutation, messagesQuery.data]);
 
-  useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); if (remoteTypingTimer.current) clearTimeout(remoteTypingTimer.current); if (friendId) emitDirectTyping(friendId, false); }, [friendId]);
+  useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); if (remoteTypingTimer.current) clearTimeout(remoteTypingTimer.current); closeContextMenu(); setEditingId(null); setEditingOriginalText(""); if (friendId) emitDirectTyping(friendId, false); }, [friendId]);
 
   useEffect(() => {
     if (!friendId || !user) return;
@@ -183,6 +197,8 @@ export default function DirectChatExperience() {
 
     let active = true;
     let unsubscribe: (() => void) | null = null;
+    let unsubscribeUpdated: (() => void) | null = null;
+    let unsubscribeDeleted: (() => void) | null = null;
 
     const connect = async () => {
       setConnecting(true);
@@ -203,6 +219,8 @@ export default function DirectChatExperience() {
             });
           }
         });
+        unsubscribeUpdated = onDirectMessageUpdated((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item) } : current); });
+        unsubscribeDeleted = onDirectMessageDeleted((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) { queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (activeContextMessageId === message.id) closeContextMenu(); } });
 
         await joinDirectConversation(friendId);
       } catch (socketError) {
@@ -222,9 +240,11 @@ export default function DirectChatExperience() {
     return () => {
       active = false;
       unsubscribe?.();
+      unsubscribeUpdated?.();
+      unsubscribeDeleted?.();
       leaveDirectConversation(friendId);
     };
-  }, [accessToken, conversationId, friendId, queryClient, user]);
+  }, [accessToken, conversationId, editingId, friendId, queryClient, user]);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -264,9 +284,12 @@ export default function DirectChatExperience() {
     }
   };
 
+  const handleEdit = async () => { if (!editingId || !text.trim()) return; await editMutation.mutateAsync({ messageId: editingId, text: text.trim() }); setEditingId(null); setEditingOriginalText(""); setText(""); };
+  const handleDelete = (messageId: string) => { confirmDelete(() => { if (editingId === messageId) { setEditingId(null); setEditingOriginalText(""); setText(""); } void deleteMutation.mutateAsync({ messageId }); }); };
+
   const handleTextChange = (value: string) => {
     setText(value);
-    if (!friendId) return;
+    if (!friendId || editingId) return;
     if (typingTimer.current) clearTimeout(typingTimer.current);
     if (!value.trim()) { emitDirectTyping(friendId, false); return; }
     emitDirectTyping(friendId, true);
@@ -380,6 +403,7 @@ export default function DirectChatExperience() {
                   ) : null}
 
                   <View style={[styles.messageRow, isMine && styles.myMessageRow]}>
+                    <MessageContextActions enabled={isMine && !item.deletedAt} own={isMine} onOpen={(position) => openContextMenu(item.id, position)}>
                     <View
                       style={[
                         styles.bubble,
@@ -387,8 +411,8 @@ export default function DirectChatExperience() {
                         sameSenderNext && styles.groupedBubble,
                       ]}
                     >
-                      <Text style={[styles.messageText, isMine && styles.myMessageText]}>
-                        {item.text}
+                      <Text style={[styles.messageText, isMine && styles.myMessageText, item.deletedAt && styles.deletedMessageText]}>
+                        {item.deletedAt ? "Mensagem excluída" : item.text}
                       </Text>
                       <View style={styles.messageMeta}>
                         <Text style={[styles.messageTime, isMine && styles.myMessageTime]}>
@@ -398,7 +422,9 @@ export default function DirectChatExperience() {
                           <Text style={styles.readStatus}>{isMessageReadByPeer(item, readStateQuery.data?.peer) ? "Lida" : "Enviada"}</Text>
                         ) : null}
                       </View>
+                      {item.editedAt && !item.deletedAt ? <Text style={styles.editedLabel}>Editada</Text> : null}
                     </View>
+                    </MessageContextActions>
                   </View>
                 </>
               );
@@ -417,15 +443,17 @@ export default function DirectChatExperience() {
             }
           />
 
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
-            {remoteTyping ? <Text style={styles.typingIndicator}>{friend.name} está digitando...</Text> : null}
+            {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
+            {remoteTyping && !editingId ? <Text style={styles.typingIndicator}>{friend.name} está digitando...</Text> : null}
             <View style={styles.composer}>
               <TextInput
                 editable={!sending}
                 maxLength={2000}
                 multiline
                 onChangeText={handleTextChange}
-                onBlur={() => { if (friendId) emitDirectTyping(friendId, false); }}
+                onBlur={() => { if (friendId && !editingId) emitDirectTyping(friendId, false); }}
                 onSubmitEditing={() => {
                   if (Platform.OS === "web" && !text.includes("\n")) void handleSend();
                 }}
@@ -435,9 +463,9 @@ export default function DirectChatExperience() {
                 value={text}
               />
               <Pressable
-                accessibilityLabel="Enviar mensagem"
+                accessibilityLabel={editingId ? "Salvar edição" : "Enviar mensagem"}
                 disabled={!text.trim() || sending}
-                onPress={() => void handleSend()}
+                onPress={() => void (editingId ? handleEdit() : handleSend())}
                 style={({ pressed }) => [
                   styles.sendButton,
                   !text.trim() && styles.sendButtonEmpty,
@@ -554,7 +582,7 @@ const styles = StyleSheet.create({
   dayLabel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10 },
   messageRow: { alignItems: "flex-start", marginBottom: 7, width: "100%" },
   myMessageRow: { alignItems: "flex-end" },
-  bubble: { borderRadius: 18, maxWidth: "75%", paddingBottom: 7, paddingHorizontal: 14, paddingTop: 10 },
+  bubble: { borderRadius: 18, flexShrink: 0, maxWidth: "100%", paddingBottom: 7, paddingHorizontal: 14, paddingTop: 10 },
   groupedBubble: { marginBottom: -3 },
   otherBubble: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderBottomLeftRadius: 4 },
   myBubble: { backgroundColor: colors.brand, borderBottomRightRadius: 4 },
@@ -564,11 +592,20 @@ const styles = StyleSheet.create({
   messageTime: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10 },
   readStatus: { color: "#665312", fontFamily: fonts.regular, fontSize: 9 },
   myMessageTime: { color: "#665312" },
+  deletedMessageText: { color: colors.textMuted, fontStyle: "italic" },
+  editedLabel: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9, marginTop: 2 },
+  messageActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  actionText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9 },
   emptyConversation: { alignItems: "center", paddingHorizontal: 18 },
   emptyAvatarRing: { borderColor: colors.brandBorder, borderRadius: 40, borderWidth: 1, padding: 5 },
   emptyTitle: { color: colors.text, fontFamily: fonts.display, fontSize: 25, marginTop: 18 },
   emptyText: { color: colors.textSecondary, fontFamily: fonts.regular, fontSize: 12, lineHeight: 18, marginTop: 7, maxWidth: 300, textAlign: "center" },
   composerArea: { backgroundColor: colors.background, borderTopColor: colors.border, borderTopWidth: 1, paddingBottom: 0, paddingHorizontal: 16, paddingTop: 10 },
+  editBar: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 10, borderWidth: 1, flexDirection: "row", marginBottom: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  editBarCopy: { flex: 1, minWidth: 0 },
+  editBarTitle: { color: colors.brand, fontFamily: fonts.semibold, fontSize: 10 },
+  editBarText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginTop: 2 },
+  editBarCancel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10, marginLeft: 10 },
   typingIndicator: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginBottom: 5, marginLeft: 5 },
   composer: { alignItems: "flex-end", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, flexDirection: "row", minHeight: 50, paddingBottom: 5, paddingLeft: 16, paddingRight: 5, paddingTop: 5 },
   input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19, maxHeight: 110, minHeight: 39, paddingHorizontal: 0, paddingVertical: 9 },

@@ -116,6 +116,11 @@ assert("deleted messages hide reactions", directChat.includes('!item.deletedAt &
 assert("reaction pills do not expose user lists", !messagesResource.includes('reactedBy') && !messagesResource.includes('userIds'));
 assert("context menu uses safe viewport clamping", contextActions.includes("SAFE_MARGIN") && contextActions.includes("window.innerWidth") && contextActions.includes("window.innerHeight") && contextActions.includes("clampMenuPosition"));
 assert("context menu remains a single overlay", contextActions.includes('position: "absolute"') && directChat.includes("activeContextMessageId ? <MessageActionMenu") && groupChat.includes("activeContextMessageId ? <MessageActionMenu"));
+assert("reply action is global and available to peers", contextActions.includes('onReply') && contextActions.includes('Responder') && directChat.includes('onReply={selectReplyMessage}') && groupChat.includes('onReply={selectReplyMessage}'));
+assert("reply create resource accepts replyToId", messagesResource.includes('replyToId?: string') && directChat.includes('replyToId: replyingToId') && groupChat.includes('replyToId: replyingToId'));
+assert("single reply state and composer banner", directChat.includes('replyingToId') && groupChat.includes('replyingToId') && directChat.includes('Respondendo a') && groupChat.includes('Respondendo a'));
+assert("reply and edit are mutually exclusive", directChat.includes('setReplyingToId(null)') && groupChat.includes('setReplyingToId(null)') && directChat.includes('setEditingId(null)') && groupChat.includes('setEditingId(null)'));
+assert("reply quote is one level and deleted-safe", messagesResource.includes('replyTo?: ReplyPreview') && directChat.includes('item.replyTo.text') && groupChat.includes('item.replyTo.text'));
 
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]

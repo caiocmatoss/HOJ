@@ -26,6 +26,7 @@ export type ServerMessage = {
   deletedAt?: string | null;
   reactions?: Array<{ type: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE"; count: number }>;
   myReaction?: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE" | null;
+  replyTo?: { id: string; userId?: string; senderId?: string; authorName?: string | null; text: string | null; deletedAt: string | null } | null;
 
   user?: {
     id: string;
@@ -46,6 +47,7 @@ export type DirectServerMessage = {
   deletedAt?: string | null;
   reactions?: Array<{ type: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE"; count: number }>;
   myReaction?: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE" | null;
+  replyTo?: { id: string; userId?: string; senderId?: string; authorName?: string | null; text: string | null; deletedAt: string | null } | null;
 
   sender?: {
     id: string;
@@ -234,6 +236,7 @@ type ClientToServerEvents = {
     data: {
       groupId: string;
       text: string;
+      replyToId?: string;
     },
   ) => void;
 
@@ -257,6 +260,7 @@ type ClientToServerEvents = {
     data: {
       receiverId: string;
       text: string;
+      replyToId?: string;
     },
   ) => void;
   "direct:typing": (data: { peerUserId: string; isTyping: boolean }) => void;

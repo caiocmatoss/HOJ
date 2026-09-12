@@ -52,6 +52,7 @@ function normalizeMessage(message: GroupMessage): LifecycleChatMessage {
     deletedAt: message.deletedAt,
     reactions: message.reactions,
     myReaction: message.myReaction,
+    replyTo: message.replyTo,
   };
 }
 
@@ -97,6 +98,7 @@ export default function GroupChatExperience() {
   const removeReactionMutation = useRemoveGroupMessageReactionMutation();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingOriginalText, setEditingOriginalText] = useState("");
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 24, y: 180 });
   const markReadMutation = useMarkChatReadMutation();
@@ -120,7 +122,8 @@ export default function GroupChatExperience() {
   const messages = useMemo(() => (messagesQuery.data?.items ?? []).map(normalizeMessage), [messagesQuery.data]);
   const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
   const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
-  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setReplyingToId(null); setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectReplyMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(null); setEditingOriginalText(""); setReplyingToId(message.id); } };
   const selectReaction = (type: ReactionType) => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (!message || message.deletedAt || !groupId) return; void (message.myReaction === type ? removeReactionMutation.mutateAsync({ groupId, messageId: message.id }) : setReactionMutation.mutateAsync({ groupId, messageId: message.id, type })); };
 
   useEffect(() => {
@@ -170,8 +173,8 @@ export default function GroupChatExperience() {
           queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: { items: GroupMessage[]; page: number; limit: number; totalCount: number; totalPages: number } | undefined) => current ? { ...current, items: [...current.items.filter((item) => item.id !== message.id), message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : current);
           scrollToBottom(true);
         });
-        unsubscribeUpdated = onMessageUpdated((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item) } : current); });
-      unsubscribeDeleted = onMessageDeleted((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (activeContextMessageId === message.id) closeContextMenu(); });
+      unsubscribeUpdated = onMessageUpdated((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item.replyTo?.id === message.id ? { ...item, replyTo: { ...item.replyTo, text: message.text, deletedAt: message.deletedAt ?? null } } : item) } : current); });
+      unsubscribeDeleted = onMessageDeleted((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item.replyTo?.id === message.id ? { ...item, replyTo: { ...item.replyTo, text: null, deletedAt: message.deletedAt ?? new Date().toISOString() } } : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (replyingToId === message.id) setReplyingToId(null); if (activeContextMessageId === message.id) closeContextMenu(); });
         unsubscribeReaction = onMessageReaction((event) => { if (event.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === event.messageId ? { ...item, reactions: event.reactions, ...(event.actorUserId === user?.id ? { myReaction: event.reaction } : {}) } : item) } : current); });
         await joinGroup(groupId);
       } catch (socketError) {
@@ -197,7 +200,7 @@ export default function GroupChatExperience() {
       leaveGroup(groupId);
       processedMessageIds.current.clear();
     };
-  }, [accessToken, editingId, groupId, queryClient, scrollToBottom]);
+  }, [accessToken, editingId, groupId, queryClient, replyingToId, scrollToBottom]);
 
   useEffect(() => {
     if (loadingMessages || messages.length === 0) return;
@@ -214,9 +217,10 @@ export default function GroupChatExperience() {
     if (typingTimer.current) clearTimeout(typingTimer.current);
     emitGroupTyping(groupId, false);
     try {
-      const response = await sendMutation.mutateAsync({ groupId, text: trimmed });
+      const response = await sendMutation.mutateAsync({ groupId, text: trimmed, replyToId: replyingToId ?? undefined });
       queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: { items: GroupMessage[]; page: number; limit: number; totalCount: number; totalPages: number } | undefined) => current ? { ...current, items: [...current.items.filter((item) => item.id !== response.id), response].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : current);
       setText("");
+      setReplyingToId(null);
       scrollToBottom(true);
     } catch (sendError) {
       setError(
@@ -366,6 +370,7 @@ export default function GroupChatExperience() {
                           continuesSequence && styles.groupedBubble,
                         ]}
                       >
+                      {item.replyTo ? <View style={styles.replyQuote}><Text style={styles.replyQuoteAuthor}>{item.replyTo.authorName ?? "Mensagem"}</Text><Text numberOfLines={2} style={styles.replyQuoteText}>{item.replyTo.text ?? "Mensagem excluída"}</Text></View> : null}
                         {!isMine && startsSequence ? (
                           <Text style={styles.senderName}>{senderName}</Text>
                         ) : null}
@@ -403,9 +408,10 @@ export default function GroupChatExperience() {
             />
           )}
 
-          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.userId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.userId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
             {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
+            {replyingToId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Respondendo a {messages.find((item) => item.id === replyingToId)?.user?.name ?? group?.name}</Text><Text numberOfLines={1} style={styles.editBarText}>{messages.find((item) => item.id === replyingToId)?.text ?? "Mensagem excluída"}</Text></View><Pressable accessibilityLabel="Cancelar resposta" onPress={() => setReplyingToId(null)}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {typingLabel && !editingId ? <Text style={styles.typingIndicator}>{typingLabel}</Text> : null}
             <View style={styles.composer}>
               <TextInput
@@ -534,6 +540,9 @@ const styles = StyleSheet.create({
   myMessageTime: { color: "#665312" },
   deletedMessageText: { color: colors.textMuted, fontStyle: "italic" },
   editedLabel: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9, marginTop: 2 },
+  replyQuote: { borderLeftColor: colors.textMuted, borderLeftWidth: 2, marginBottom: 6, paddingLeft: 7 },
+  replyQuoteAuthor: { color: colors.textMuted, fontSize: 10, fontWeight: "600" },
+  replyQuoteText: { color: colors.textMuted, fontSize: 10 },
   reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 },
   reactionPill: { color: colors.textMuted, fontSize: 11 },
   messageActions: { flexDirection: "row", gap: 8, marginTop: 4 },

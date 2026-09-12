@@ -117,6 +117,7 @@ export default function DirectChatExperience() {
   const [remoteTyping, setRemoteTyping] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingOriginalText, setEditingOriginalText] = useState("");
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 24, y: 180 });
 
@@ -128,7 +129,8 @@ export default function DirectChatExperience() {
   const messages = (messagesQuery.data?.items ?? []) as LifecycleDirectChatMessage[];
   const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
   const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
-  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setReplyingToId(null); setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectReplyMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(null); setEditingOriginalText(""); setReplyingToId(message.id); } };
   const selectReaction = (type: ReactionType) => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (!message || message.deletedAt) return; void (message.myReaction === type ? removeReactionMutation.mutateAsync({ messageId: message.id }) : setReactionMutation.mutateAsync({ messageId: message.id, type })); };
 
   useEffect(() => {
@@ -225,8 +227,8 @@ export default function DirectChatExperience() {
             });
           }
         });
-        unsubscribeUpdated = onDirectMessageUpdated((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item) } : current); });
-        unsubscribeDeleted = onDirectMessageDeleted((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) { queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (activeContextMessageId === message.id) closeContextMenu(); } });
+        unsubscribeUpdated = onDirectMessageUpdated((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item.replyTo?.id === message.id ? { ...item, replyTo: { ...item.replyTo, text: message.text, deletedAt: message.deletedAt ?? null } } : item) } : current); });
+        unsubscribeDeleted = onDirectMessageDeleted((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) { queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item.replyTo?.id === message.id ? { ...item, replyTo: { ...item.replyTo, text: null, deletedAt: message.deletedAt ?? new Date().toISOString() } } : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (replyingToId === message.id) setReplyingToId(null); if (activeContextMessageId === message.id) closeContextMenu(); } });
         unsubscribeReaction = onDirectMessageReaction((event) => queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === event.messageId ? { ...item, reactions: event.reactions, ...(event.actorUserId === user.id ? { myReaction: event.reaction } : {}) } : item) } : current));
 
         await joinDirectConversation(friendId);
@@ -252,7 +254,7 @@ export default function DirectChatExperience() {
       unsubscribeReaction?.();
       leaveDirectConversation(friendId);
     };
-  }, [accessToken, conversationId, editingId, friendId, queryClient, user]);
+  }, [accessToken, conversationId, editingId, friendId, queryClient, replyingToId, user]);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -275,13 +277,14 @@ export default function DirectChatExperience() {
     emitDirectTyping(friendId, false);
 
     try {
-      const message = await sendMutation.mutateAsync({ userId: friendId, text: trimmedText });
+      const message = await sendMutation.mutateAsync({ userId: friendId, text: trimmedText, replyToId: replyingToId ?? undefined });
       queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => {
         if (!current) return current;
         const items = [...current.items.filter((item: DirectMessage) => item.id !== message.id), message].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         return { ...current, items };
       });
       setText("");
+      setReplyingToId(null);
     } catch (sendError) {
       setError(
         sendError instanceof Error
@@ -419,6 +422,7 @@ export default function DirectChatExperience() {
                         sameSenderNext && styles.groupedBubble,
                       ]}
                     >
+                      {item.replyTo ? <View style={styles.replyQuote}><Text style={styles.replyQuoteAuthor}>{item.replyTo.authorName ?? "Mensagem"}</Text><Text numberOfLines={2} style={styles.replyQuoteText}>{item.replyTo.text ?? "Mensagem excluída"}</Text></View> : null}
                       <Text style={[styles.messageText, isMine && styles.myMessageText, item.deletedAt && styles.deletedMessageText]}>
                         {item.deletedAt ? "Mensagem excluída" : item.text}
                       </Text>
@@ -452,9 +456,10 @@ export default function DirectChatExperience() {
             }
           />
 
-          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.senderId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.senderId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
             {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
+            {replyingToId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Respondendo a {messages.find((item) => item.id === replyingToId)?.sender?.name ?? friend.name}</Text><Text numberOfLines={1} style={styles.editBarText}>{messages.find((item) => item.id === replyingToId)?.text ?? "Mensagem excluída"}</Text></View><Pressable accessibilityLabel="Cancelar resposta" onPress={() => setReplyingToId(null)}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {remoteTyping && !editingId ? <Text style={styles.typingIndicator}>{friend.name} está digitando...</Text> : null}
             <View style={styles.composer}>
               <TextInput
@@ -603,6 +608,9 @@ const styles = StyleSheet.create({
   myMessageTime: { color: "#665312" },
   deletedMessageText: { color: colors.textMuted, fontStyle: "italic" },
   editedLabel: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9, marginTop: 2 },
+  replyQuote: { borderLeftColor: colors.textMuted, borderLeftWidth: 2, marginBottom: 6, paddingLeft: 7 },
+  replyQuoteAuthor: { color: colors.textMuted, fontSize: 10, fontWeight: "600" },
+  replyQuoteText: { color: colors.textMuted, fontSize: 10 },
   reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 },
   reactionPill: { color: colors.textMuted, fontSize: 11 },
   messageActions: { flexDirection: "row", gap: 8, marginTop: 4 },

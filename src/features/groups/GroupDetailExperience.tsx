@@ -20,8 +20,9 @@ import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
 import { colors, fonts, radii, shadows } from "@/theme/tokens";
 export default function GroupDetailExperience() {
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; from?: string | string[] }>();
   const groupId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const fromChat = (Array.isArray(params.from) ? params.from[0] : params.from) === "chat";
 
   const user = useUserStore((state) => state.user);
   const presenceStatuses = usePresenceStore((state) => state.statuses);
@@ -101,7 +102,7 @@ export default function GroupDetailExperience() {
           <Pressable
             accessibilityLabel="Voltar para grupos"
             accessibilityRole="button"
-            onPress={() => router.replace("/(main)/chat")}
+            onPress={() => fromChat && groupId ? router.replace({ pathname: "/(main)/group/chat/[id]", params: { id: groupId } }) : router.replace("/(main)/chat")}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
           >
             <Ionicons color={colors.text} name="chevron-back" size={23} />

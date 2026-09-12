@@ -1,4 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
+import { resolveBackendMediaUrl } from "@/services/api";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,7 +21,7 @@ import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
 import { useGroupsQuery } from "@/services/api/resources/groups";
-import { useDeleteDirectMessageMutation, useDirectMessagesQuery, useDirectReadStateQuery, useEditDirectMessageMutation, useForwardDirectMessageMutation, useMarkChatReadMutation, useSendDirectMessageMutation, useSetDirectMessageReactionMutation, useRemoveDirectMessageReactionMutation, type DirectMessage, type ReactionType } from "@/services/api/resources/messages";
+import { useDeleteDirectMessageMutation, useDirectMessagesQuery, useDirectReadStateQuery, useEditDirectMessageMutation, useForwardDirectMessageMutation, useMarkChatReadMutation, useSendDirectMessageMutation, useSendDirectImageMessageMutation, useSetDirectMessageReactionMutation, useRemoveDirectMessageReactionMutation, type DirectMessage, type MessageImageAsset, type ReactionType } from "@/services/api/resources/messages";
 import { messageKeys } from "@/services/api/query-keys";
 import {
   joinDirectConversation,
@@ -41,6 +44,7 @@ import { MAIN_TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
 import { confirmDelete } from "./confirmDelete";
 import { MessageActionMenu, MessageContextActions } from "./MessageContextActions";
 import { ForwardPicker, type ForwardTarget } from "./ForwardPicker";
+import { MessageImageViewer } from "./MessageImageViewer";
 
 const CHAT_COMPOSER_TAB_GAP = 8;
 
@@ -106,6 +110,7 @@ export default function DirectChatExperience() {
   const messagesQuery = useDirectMessagesQuery(friendId, { page: 1, limit: 100 });
   const readStateQuery = useDirectReadStateQuery(friendId);
   const sendMutation = useSendDirectMessageMutation();
+  const imageSendMutation = useSendDirectImageMessageMutation();
   const editMutation = useEditDirectMessageMutation();
   const deleteMutation = useDeleteDirectMessageMutation();
   const setReactionMutation = useSetDirectMessageReactionMutation();
@@ -113,7 +118,7 @@ export default function DirectChatExperience() {
   const forwardMutation = useForwardDirectMessageMutation();
   const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
-  const sending = sendMutation.isPending;
+  const sending = sendMutation.isPending || imageSendMutation.isPending;
   const listRef = useRef<FlatList<LifecycleDirectChatMessage>>(null);
   const markedReadId = useRef<string | null>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,6 +130,8 @@ export default function DirectChatExperience() {
   const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 24, y: 180 });
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<MessageImageAsset | null>(null);
+  const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
 
   const conversationId = useMemo(() => {
     if (!user || !friendId) return null;
@@ -134,7 +141,7 @@ export default function DirectChatExperience() {
   const messages = (messagesQuery.data?.items ?? []) as LifecycleDirectChatMessage[];
   const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
   const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
-  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setReplyingToId(null); setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt && message.text?.trim()) { setSelectedImage(null); setReplyingToId(null); setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
   const selectReplyMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(null); setEditingOriginalText(""); setReplyingToId(message.id); } };
   const selectReaction = (type: ReactionType) => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (!message || message.deletedAt) return; void (message.myReaction === type ? removeReactionMutation.mutateAsync({ messageId: message.id }) : setReactionMutation.mutateAsync({ messageId: message.id, type })); };
   const selectForward = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) setForwardMessageId(message.id); };
@@ -273,9 +280,17 @@ export default function DirectChatExperience() {
 
   const handleBack = () => router.replace("/(main)/chat");
 
+  const chooseImage = async () => {
+    if (editingId || sending) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: false, quality: 0.85 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setSelectedImage({ uri: asset.uri, fileName: asset.fileName, mimeType: asset.mimeType, file: asset.file });
+  };
+
   const handleSend = async () => {
     const trimmedText = text.trim();
-    if (!trimmedText || !user || !friend || !friendId || !conversationId || sending) {
+    if ((!trimmedText && !selectedImage) || !user || !friend || !friendId || !conversationId || sending) {
       return;
     }
 
@@ -284,13 +299,16 @@ export default function DirectChatExperience() {
     emitDirectTyping(friendId, false);
 
     try {
-      const message = await sendMutation.mutateAsync({ userId: friendId, text: trimmedText, replyToId: replyingToId ?? undefined });
+      const message = selectedImage
+        ? await imageSendMutation.mutateAsync({ userId: friendId, asset: selectedImage, text: trimmedText, replyToId: replyingToId ?? undefined })
+        : await sendMutation.mutateAsync({ userId: friendId, text: trimmedText, replyToId: replyingToId ?? undefined });
       queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => {
         if (!current) return current;
         const items = [...current.items.filter((item: DirectMessage) => item.id !== message.id), message].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         return { ...current, items };
       });
       setText("");
+      setSelectedImage(null);
       setReplyingToId(null);
     } catch (sendError) {
       setError(
@@ -430,7 +448,8 @@ export default function DirectChatExperience() {
                       ]}
                     >
                       {item.isForwarded && !item.deletedAt ? <Text style={styles.forwardedLabel}>↪ Encaminhada</Text> : null}
-                      {item.replyTo ? <View style={styles.replyQuote}><Text style={styles.replyQuoteAuthor}>{item.replyTo.authorName ?? "Mensagem"}</Text><Text numberOfLines={2} style={styles.replyQuoteText}>{item.replyTo.text ?? "Mensagem excluída"}</Text></View> : null}
+                      {item.replyTo ? <View style={styles.replyQuote}><Text style={styles.replyQuoteAuthor}>{item.replyTo.authorName ?? "Mensagem"}</Text>{item.replyTo.imageUrl ? <Image accessibilityLabel="Foto citada" onResponderRelease={() => setViewerImageUrl(resolveBackendMediaUrl(item.replyTo?.imageUrl) ?? item.replyTo?.imageUrl ?? null)} onStartShouldSetResponder={() => true} onTouchEnd={() => setViewerImageUrl(resolveBackendMediaUrl(item.replyTo?.imageUrl) ?? item.replyTo?.imageUrl ?? null)} source={{ uri: resolveBackendMediaUrl(item.replyTo.imageUrl) ?? item.replyTo.imageUrl }} style={styles.replyQuoteImage} /> : null}<Text numberOfLines={2} style={styles.replyQuoteText}>{item.replyTo.text ?? (item.replyTo.imageUrl ? "Foto" : "Mensagem excluída")}</Text></View> : null}
+                      {item.imageUrl && !item.deletedAt ? <Image accessibilityLabel="Imagem da mensagem" contentFit="cover" onResponderRelease={() => setViewerImageUrl(resolveBackendMediaUrl(item.imageUrl) ?? item.imageUrl)} onStartShouldSetResponder={() => true} onTouchEnd={() => setViewerImageUrl(resolveBackendMediaUrl(item.imageUrl) ?? item.imageUrl)} source={{ uri: resolveBackendMediaUrl(item.imageUrl) ?? item.imageUrl }} style={styles.messageImage} /> : null}
                       <Text style={[styles.messageText, isMine && styles.myMessageText, item.deletedAt && styles.deletedMessageText]}>
                         {item.deletedAt ? "Mensagem excluída" : item.text}
                       </Text>
@@ -464,13 +483,18 @@ export default function DirectChatExperience() {
             }
           />
 
-          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.senderId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onForward={selectForward} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.senderId === user?.id)} canEdit={Boolean(messages.find((item) => item.id === activeContextMessageId)?.text?.trim())} canForward={!Boolean(messages.find((item) => item.id === activeContextMessageId)?.imageUrl)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onForward={selectForward} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <ForwardPicker visible={Boolean(forwardMessageId)} friends={friendsQuery.data?.items ?? []} groups={groupsQuery.data?.items ?? []} onSelect={(target) => void handleForwardTarget(target)} onClose={() => setForwardMessageId(null)} />
+          <MessageImageViewer imageUrl={viewerImageUrl} onClose={() => setViewerImageUrl(null)} />
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
             {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {replyingToId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Respondendo a {messages.find((item) => item.id === replyingToId)?.sender?.name ?? friend.name}</Text><Text numberOfLines={1} style={styles.editBarText}>{messages.find((item) => item.id === replyingToId)?.text ?? "Mensagem excluída"}</Text></View><Pressable accessibilityLabel="Cancelar resposta" onPress={() => setReplyingToId(null)}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {remoteTyping && !editingId ? <Text style={styles.typingIndicator}>{friend.name} está digitando...</Text> : null}
-            <View style={styles.composer}>
+            {selectedImage ? <View style={styles.imagePreview}><Image accessibilityLabel="Imagem selecionada" contentFit="cover" source={{ uri: selectedImage.uri }} style={styles.imagePreviewThumb} /><Pressable accessibilityLabel="Remover imagem selecionada" onPress={() => setSelectedImage(null)}><Ionicons color={colors.textSecondary} name="close-circle" size={22} /></Pressable></View> : null}
+            <View style={styles.composerRow}>
+              <Pressable accessibilityLabel="Adicionar imagem" disabled={Boolean(editingId) || sending} hitSlop={10} onPress={() => void chooseImage()} style={styles.attachButton}><Ionicons color={editingId ? colors.textMuted : colors.brand} name="image-outline" size={16} /></Pressable>
+              <View style={styles.composer}>
+              <View style={styles.inputContainer}>
               <TextInput
                 editable={!sending}
                 maxLength={2000}
@@ -482,24 +506,26 @@ export default function DirectChatExperience() {
                 }}
                 placeholder="Mensagem…"
                 placeholderTextColor={colors.textMuted}
-                style={styles.input}
+                style={[styles.input, !text.includes("\n") && styles.inputSingleLine]}
                 value={text}
               />
+              </View>
+              </View>
               <Pressable
                 accessibilityLabel={editingId ? "Salvar edição" : "Enviar mensagem"}
-                disabled={!text.trim() || sending}
+                disabled={(!text.trim() && !selectedImage) || sending}
                 onPress={() => void (editingId ? handleEdit() : handleSend())}
                 style={({ pressed }) => [
                   styles.sendButton,
-                  !text.trim() && styles.sendButtonEmpty,
-                  (!text.trim() || sending) && styles.sendButtonDisabled,
-                  pressed && text.trim() && !sending && styles.sendButtonPressed,
+                  !text.trim() && !selectedImage && styles.sendButtonEmpty,
+                  ((!text.trim() && !selectedImage) || sending) && styles.sendButtonDisabled,
+                  pressed && (text.trim() || selectedImage) && !sending && styles.sendButtonPressed,
                 ]}
               >
                 {sending ? (
                   <ActivityIndicator color={colors.background} size="small" />
                 ) : (
-                  <Svg height={18} width={18} viewBox="0 0 24 24" fill="none">
+                  <Svg height={16} width={16} viewBox="0 0 24 24" fill="none">
                     <Path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke={text.trim() ? colors.background : colors.textMuted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 )}
@@ -620,6 +646,8 @@ const styles = StyleSheet.create({
   replyQuote: { borderLeftColor: colors.textMuted, borderLeftWidth: 2, marginBottom: 6, paddingLeft: 7 },
   replyQuoteAuthor: { color: colors.textMuted, fontSize: 10, fontWeight: "600" },
   replyQuoteText: { color: colors.textMuted, fontSize: 10 },
+  replyQuoteImage: { borderRadius: 5, height: 34, marginBottom: 2, width: 46 },
+  messageImage: { borderRadius: 12, height: 180, marginBottom: 4, maxWidth: 260, width: 240 },
   forwardedLabel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10, marginBottom: 3 },
   reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 },
   reactionPill: { color: colors.textMuted, fontSize: 11 },
@@ -636,9 +664,15 @@ const styles = StyleSheet.create({
   editBarText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginTop: 2 },
   editBarCancel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10, marginLeft: 10 },
   typingIndicator: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginBottom: 5, marginLeft: 5 },
-  composer: { alignItems: "flex-end", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, flexDirection: "row", minHeight: 50, paddingBottom: 5, paddingLeft: 16, paddingRight: 5, paddingTop: 5 },
-  input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19, maxHeight: 110, minHeight: 39, paddingHorizontal: 0, paddingVertical: 9 },
-  sendButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: 21, height: 42, justifyContent: "center", marginLeft: 8, width: 42 },
+  composer: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flex: 1, flexDirection: "row", minHeight: 36, paddingBottom: 2, paddingLeft: 12, paddingRight: 4, paddingTop: 2 },
+  composerRow: { alignItems: "center", flexDirection: "row", gap: 8 },
+  inputContainer: { flex: 1, minWidth: 0 },
+  attachButton: { alignItems: "center", alignSelf: "center", height: 24, justifyContent: "center", marginRight: 4, width: 24 },
+  imagePreview: { alignItems: "center", alignSelf: "flex-start", backgroundColor: colors.surface, borderRadius: 10, flexDirection: "row", gap: 8, marginBottom: 8, padding: 6 },
+  imagePreviewThumb: { borderRadius: 7, height: 56, width: 56 },
+  input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 18, maxHeight: 110, minHeight: 26, paddingHorizontal: 0, paddingVertical: 2 },
+  inputSingleLine: Platform.OS === "web" ? { paddingBottom: 0, paddingTop: 6, textAlignVertical: "center" } : { textAlignVertical: "center" },
+  sendButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: 15, height: 30, justifyContent: "center", marginLeft: 6, width: 30 },
   sendButtonEmpty: { backgroundColor: colors.surface },
   sendButtonDisabled: { opacity: 1 },
   sendButtonPressed: { backgroundColor: colors.brandPressed, transform: [{ scale: 0.95 }] },

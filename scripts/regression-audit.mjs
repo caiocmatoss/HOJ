@@ -129,6 +129,31 @@ assert("forward picker offers friends and groups", read("src/features/chat/Forwa
 assert("forward picker is used by both chats", directChat.includes("<ForwardPicker") && groupChat.includes("<ForwardPicker"));
 assert("forwarded label hides source metadata", directChat.includes("↪ Encaminhada") && groupChat.includes("↪ Encaminhada") && !messagesResource.includes("sourceMessageId"));
 
+assert("message types expose imageUrl", messagesResource.includes("imageUrl: string | null") && messagesResource.includes("ReplyPreview") && messagesResource.includes("lastMessage: { id: string; text: string; imageUrl"));
+assert("image resources use apiClient multipart", messagesResource.includes("sendDirectImageMessageResource") && messagesResource.includes("sendGroupImageMessageResource") && messagesResource.includes("new FormData()") && messagesResource.includes('form.append("image"'));
+assert("DirectChat has image picker and upload", directChat.includes('expo-image-picker') && directChat.includes("launchImageLibraryAsync") && directChat.includes("useSendDirectImageMessageMutation"));
+assert("GroupChat has image picker and upload", groupChat.includes('expo-image-picker') && groupChat.includes("launchImageLibraryAsync") && groupChat.includes("useSendGroupImageMessageMutation"));
+assert("image messages render in both chats", directChat.includes('item.imageUrl && !item.deletedAt') && groupChat.includes('item.imageUrl && !item.deletedAt') && directChat.includes('Imagem da mensagem') && groupChat.includes('Imagem da mensagem'));
+assert("image messages do not offer Forward", directChat.includes("canForward={!Boolean(messages.find") && groupChat.includes("canForward={!Boolean(messages.find") && contextActions.includes("canForward"));
+assert("image-only bubbles have no fake text", directChat.includes("!selectedImage") && groupChat.includes("!selectedImage") && messagesResource.includes('text: string | null'));
+assert("deleted messages hide imageUrl", directChat.includes('item.imageUrl && !item.deletedAt') && groupChat.includes('item.imageUrl && !item.deletedAt'));
+assert("image reply visual exists", directChat.includes("replyTo.imageUrl") && groupChat.includes("replyTo.imageUrl") && messagesResource.includes("imageUrl?: string | null"));
+assert("message media URLs use backend resolver", directChat.includes("resolveBackendMediaUrl(item.imageUrl)") && groupChat.includes("resolveBackendMediaUrl(item.imageUrl)") && directChat.includes("resolveBackendMediaUrl(item.replyTo.imageUrl)") && groupChat.includes("resolveBackendMediaUrl(item.replyTo.imageUrl)"));
+assert("image upload avoids base64 and custom socket events", !messagesResource.includes("base64") && !directChat.includes("direct:image:new") && !groupChat.includes("group:image:new"));
+assert("multipart image resources accept replyToId", messagesResource.includes("imageFormData(asset, text, replyToId)") && messagesResource.includes('form.append("replyToId", replyToId)'));
+assert("Direct image send forwards replyingToId", directChat.includes("imageSendMutation.mutateAsync({ userId: friendId, asset: selectedImage, text: trimmedText, replyToId: replyingToId ?? undefined })"));
+assert("Group image send forwards replyingToId", groupChat.includes("imageSendMutation.mutateAsync({ groupId, asset: selectedImage, text: trimmed, replyToId: replyingToId ?? undefined })"));
+assert("image replies are not blocked", !directChat.includes("Respostas com imagem ainda não são suportadas") && !groupChat.includes("Respostas com imagem ainda não são suportadas"));
+assert("image-only send is enabled in both chats", directChat.includes("(!text.trim() && !selectedImage) || sending") && groupChat.includes("(!text.trim() && !selectedImage) || sending") && directChat.includes("text: trimmedText") && groupChat.includes("text: trimmed"));
+assert("single image viewer is global per chat", (directChat.match(/<MessageImageViewer/g) || []).length === 1 && (groupChat.match(/<MessageImageViewer/g) || []).length === 1 && directChat.includes("viewerImageUrl") && groupChat.includes("viewerImageUrl"));
+assert("message and quote images open viewer without nested buttons", directChat.includes("onStartShouldSetResponder={() => true}") && groupChat.includes("onStartShouldSetResponder={() => true}") && directChat.includes("onTouchEnd={() => setViewerImageUrl") && groupChat.includes("onTouchEnd={() => setViewerImageUrl") && !directChat.includes("<Pressable onPress={() => setViewerImageUrl") && !groupChat.includes("<Pressable onPress={() => setViewerImageUrl"));
+assert("image viewer supports backdrop close and web escape", read("src/features/chat/MessageImageViewer.tsx").includes("StyleSheet.absoluteFill") && read("src/features/chat/MessageImageViewer.tsx").includes("Escape") && read("src/features/chat/MessageImageViewer.tsx").includes("onRequestClose"));
+assert("image viewer backdrop is independent from content", read("src/features/chat/MessageImageViewer.tsx").includes("onPress={onClose}") && read("src/features/chat/MessageImageViewer.tsx").includes('pointerEvents="box-none"'));
+const composerIsFinal = (source) => source.includes('composerRow: { alignItems: "center", flexDirection: "row", gap: 8 }') && source.includes('composer: {') && source.includes('minHeight: 36') && source.includes('input: {') && source.includes('maxHeight: 110') && source.includes('inputContainer: { flex: 1, minWidth: 0 }');
+const attachIsFinal = (source) => source.includes('style={styles.attachButton}') && source.includes('hitSlop={10}') && source.includes('attachButton: { alignItems: "center", alignSelf: "center", height: 24') && source.includes('width: 24') && source.indexOf('style={styles.attachButton}') < source.indexOf('<View style={styles.composer}>');
+assert("composer sizing remains bounded", composerIsFinal(directChat) && composerIsFinal(groupChat) && directChat.includes("styles.imagePreview") && groupChat.includes("styles.imagePreview"));
+assert("composer attach control fits final row", attachIsFinal(directChat) && attachIsFinal(groupChat));
+
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]
     .flatMap((dir) => { const abs = path.join(root, dir); return fs.existsSync(abs) ? walk(abs) : []; })

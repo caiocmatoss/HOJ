@@ -1,4 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
+import { resolveBackendMediaUrl } from "@/services/api";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -15,7 +18,7 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { useDeleteGroupMessageMutation, useEditGroupMessageMutation, useForwardGroupMessageMutation, useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, useSetGroupMessageReactionMutation, useRemoveGroupMessageReactionMutation, type GroupMessage, type ReactionType } from "@/services/api/resources/messages";
+import { useDeleteGroupMessageMutation, useEditGroupMessageMutation, useForwardGroupMessageMutation, useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, useSendGroupImageMessageMutation, useSetGroupMessageReactionMutation, useRemoveGroupMessageReactionMutation, type GroupMessage, type MessageImageAsset, type ReactionType } from "@/services/api/resources/messages";
 import { useFriendsQuery } from "@/services/api/resources/friends";
 import { useGroupsQuery } from "@/services/api/resources/groups";
 import { useGroupQuery } from "@/services/api/resources/groups";
@@ -31,6 +34,7 @@ import { MAIN_TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
 import { confirmDelete } from "../chat/confirmDelete";
 import { MessageActionMenu, MessageContextActions } from "../chat/MessageContextActions";
 import { ForwardPicker, type ForwardTarget } from "../chat/ForwardPicker";
+import { MessageImageViewer } from "../chat/MessageImageViewer";
 
 const CHAT_COMPOSER_TAB_GAP = 8;
 import Svg, { Path } from "react-native-svg";
@@ -41,6 +45,7 @@ function normalizeMessage(message: GroupMessage): LifecycleChatMessage {
     groupId: message.groupId,
     id: message.id,
     text: message.text ?? "",
+    imageUrl: message.imageUrl,
     updatedAt: message.updatedAt,
     user: message.user
       ? {
@@ -98,6 +103,7 @@ export default function GroupChatExperience() {
   const groupsQuery = useGroupsQuery({ page: 1, limit: 100 });
   const messagesQuery = useGroupMessagesQuery(groupId, { page: 1, limit: 100 });
   const sendMutation = useSendGroupMessageMutation();
+  const imageSendMutation = useSendGroupImageMessageMutation();
   const editMutation = useEditGroupMessageMutation();
   const deleteMutation = useDeleteGroupMessageMutation();
   const setReactionMutation = useSetGroupMessageReactionMutation();
@@ -109,6 +115,8 @@ export default function GroupChatExperience() {
   const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 24, y: 180 });
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<MessageImageAsset | null>(null);
+  const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
   const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
 
@@ -130,7 +138,7 @@ export default function GroupChatExperience() {
   const messages = useMemo(() => (messagesQuery.data?.items ?? []).map(normalizeMessage), [messagesQuery.data]);
   const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
   const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
-  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setReplyingToId(null); setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt && message.text?.trim()) { setSelectedImage(null); setReplyingToId(null); setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
   const selectReplyMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(null); setEditingOriginalText(""); setReplyingToId(message.id); } };
   const selectReaction = (type: ReactionType) => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (!message || message.deletedAt || !groupId) return; void (message.myReaction === type ? removeReactionMutation.mutateAsync({ groupId, messageId: message.id }) : setReactionMutation.mutateAsync({ groupId, messageId: message.id, type })); };
   const selectForward = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) setForwardMessageId(message.id); };
@@ -218,18 +226,29 @@ export default function GroupChatExperience() {
     return () => clearTimeout(timer);
   }, [loadingMessages, messages.length, scrollToBottom]);
 
+  const chooseImage = async () => {
+    if (editingId || sending) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: false, quality: 0.85 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setSelectedImage({ uri: asset.uri, fileName: asset.fileName, mimeType: asset.mimeType, file: asset.file });
+  };
+
   const handleSend = async () => {
     const trimmed = text.trim();
-    if (!trimmed || !groupId || !user || sending) return;
+    if ((!trimmed && !selectedImage) || !groupId || !user || sending) return;
 
     setSending(true);
     setError(null);
     if (typingTimer.current) clearTimeout(typingTimer.current);
     emitGroupTyping(groupId, false);
     try {
-      const response = await sendMutation.mutateAsync({ groupId, text: trimmed, replyToId: replyingToId ?? undefined });
+      const response = selectedImage
+        ? await imageSendMutation.mutateAsync({ groupId, asset: selectedImage, text: trimmed, replyToId: replyingToId ?? undefined })
+        : await sendMutation.mutateAsync({ groupId, text: trimmed, replyToId: replyingToId ?? undefined });
       queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: { items: GroupMessage[]; page: number; limit: number; totalCount: number; totalPages: number } | undefined) => current ? { ...current, items: [...current.items.filter((item) => item.id !== response.id), response].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) } : current);
       setText("");
+      setSelectedImage(null);
       setReplyingToId(null);
       scrollToBottom(true);
     } catch (sendError) {
@@ -307,7 +326,7 @@ export default function GroupChatExperience() {
               accessibilityLabel="Abrir detalhes do grupo"
               accessibilityRole="button"
               onPress={() =>
-                router.push({ pathname: "/(main)/group/[id]", params: { id: group.id } })
+                router.push({ pathname: "/(main)/group/[id]", params: { id: group.id, from: "chat" } })
               }
               style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
             >
@@ -381,7 +400,8 @@ export default function GroupChatExperience() {
                         ]}
                       >
                       {item.isForwarded && !item.deletedAt ? <Text style={styles.forwardedLabel}>↪ Encaminhada</Text> : null}
-                      {item.replyTo ? <View style={styles.replyQuote}><Text style={styles.replyQuoteAuthor}>{item.replyTo.authorName ?? "Mensagem"}</Text><Text numberOfLines={2} style={styles.replyQuoteText}>{item.replyTo.text ?? "Mensagem excluída"}</Text></View> : null}
+                      {item.replyTo ? <View style={styles.replyQuote}><Text style={styles.replyQuoteAuthor}>{item.replyTo.authorName ?? "Mensagem"}</Text>{item.replyTo.imageUrl ? <Image accessibilityLabel="Foto citada" onResponderRelease={() => setViewerImageUrl(resolveBackendMediaUrl(item.replyTo?.imageUrl) ?? item.replyTo?.imageUrl ?? null)} onStartShouldSetResponder={() => true} onTouchEnd={() => setViewerImageUrl(resolveBackendMediaUrl(item.replyTo?.imageUrl) ?? item.replyTo?.imageUrl ?? null)} source={{ uri: resolveBackendMediaUrl(item.replyTo.imageUrl) ?? item.replyTo.imageUrl }} style={styles.replyQuoteImage} /> : null}<Text numberOfLines={2} style={styles.replyQuoteText}>{item.replyTo.text ?? (item.replyTo.imageUrl ? "Foto" : "Mensagem excluída")}</Text></View> : null}
+                      {item.imageUrl && !item.deletedAt ? <Image accessibilityLabel="Imagem da mensagem" contentFit="cover" onResponderRelease={() => setViewerImageUrl(resolveBackendMediaUrl(item.imageUrl) ?? item.imageUrl)} onStartShouldSetResponder={() => true} onTouchEnd={() => setViewerImageUrl(resolveBackendMediaUrl(item.imageUrl) ?? item.imageUrl)} source={{ uri: resolveBackendMediaUrl(item.imageUrl) ?? item.imageUrl }} style={styles.messageImage} /> : null}
                         {!isMine && startsSequence ? (
                           <Text style={styles.senderName}>{senderName}</Text>
                         ) : null}
@@ -419,13 +439,18 @@ export default function GroupChatExperience() {
             />
           )}
 
-          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.userId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onForward={selectForward} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.userId === user?.id)} canEdit={Boolean(messages.find((item) => item.id === activeContextMessageId)?.text?.trim())} canForward={!Boolean(messages.find((item) => item.id === activeContextMessageId)?.imageUrl)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onReply={selectReplyMessage} onForward={selectForward} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <ForwardPicker visible={Boolean(forwardMessageId)} friends={friendsQuery.data?.items ?? []} groups={groupsQuery.data?.items ?? []} onSelect={(target) => void handleForwardTarget(target)} onClose={() => setForwardMessageId(null)} />
+          <MessageImageViewer imageUrl={viewerImageUrl} onClose={() => setViewerImageUrl(null)} />
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
             {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {replyingToId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Respondendo a {messages.find((item) => item.id === replyingToId)?.user?.name ?? group?.name}</Text><Text numberOfLines={1} style={styles.editBarText}>{messages.find((item) => item.id === replyingToId)?.text ?? "Mensagem excluída"}</Text></View><Pressable accessibilityLabel="Cancelar resposta" onPress={() => setReplyingToId(null)}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {typingLabel && !editingId ? <Text style={styles.typingIndicator}>{typingLabel}</Text> : null}
-            <View style={styles.composer}>
+            {selectedImage ? <View style={styles.imagePreview}><Image accessibilityLabel="Imagem selecionada" contentFit="cover" source={{ uri: selectedImage.uri }} style={styles.imagePreviewThumb} /><Pressable accessibilityLabel="Remover imagem selecionada" onPress={() => setSelectedImage(null)}><Ionicons color={colors.textSecondary} name="close-circle" size={22} /></Pressable></View> : null}
+            <View style={styles.composerRow}>
+              <Pressable accessibilityLabel="Adicionar imagem" disabled={Boolean(editingId) || sending} hitSlop={10} onPress={() => void chooseImage()} style={styles.attachButton}><Ionicons color={editingId ? colors.textMuted : colors.brand} name="image-outline" size={16} /></Pressable>
+              <View style={styles.composer}>
+              <View style={styles.inputContainer}>
               <TextInput
                 accessibilityLabel="Mensagem para o grupo"
                 editable={!sending}
@@ -438,25 +463,27 @@ export default function GroupChatExperience() {
                 }}
                 placeholder="Mensagem…"
                 placeholderTextColor={colors.textMuted}
-                style={styles.input}
+                style={[styles.input, !text.includes("\n") && styles.inputSingleLine]}
                 value={text}
               />
+              </View>
+              </View>
               <Pressable
                 accessibilityLabel={editingId ? "Salvar edição" : "Enviar mensagem"}
                 accessibilityRole="button"
-                disabled={!text.trim() || sending}
+                disabled={(!text.trim() && !selectedImage) || sending}
                 onPress={() => void (editingId ? handleEdit() : handleSend())}
                 style={({ pressed }) => [
                   styles.sendButton,
-                  !text.trim() && styles.sendButtonEmpty,
-                  (!text.trim() || sending) && styles.sendButtonDisabled,
-                  pressed && text.trim() && !sending && styles.sendButtonPressed,
+                  !text.trim() && !selectedImage && styles.sendButtonEmpty,
+                  ((!text.trim() && !selectedImage) || sending) && styles.sendButtonDisabled,
+                  pressed && (text.trim() || selectedImage) && !sending && styles.sendButtonPressed,
                 ]}
               >
                 {sending ? (
                   <ActivityIndicator color={colors.background} size="small" />
                 ) : (
-                  <Svg height={18} width={18} viewBox="0 0 24 24" fill="none">
+                  <Svg height={16} width={16} viewBox="0 0 24 24" fill="none">
                     <Path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke={text.trim() ? colors.background : colors.textMuted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 )}
@@ -555,6 +582,8 @@ const styles = StyleSheet.create({
   replyQuote: { borderLeftColor: colors.textMuted, borderLeftWidth: 2, marginBottom: 6, paddingLeft: 7 },
   replyQuoteAuthor: { color: colors.textMuted, fontSize: 10, fontWeight: "600" },
   replyQuoteText: { color: colors.textMuted, fontSize: 10 },
+  replyQuoteImage: { borderRadius: 5, height: 34, marginBottom: 2, width: 46 },
+  messageImage: { borderRadius: 12, height: 180, marginBottom: 4, maxWidth: 260, width: 240 },
   forwardedLabel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10, marginBottom: 3 },
   reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 },
   reactionPill: { color: colors.textMuted, fontSize: 11 },
@@ -571,9 +600,15 @@ const styles = StyleSheet.create({
   editBarText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginTop: 2 },
   editBarCancel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 10, marginLeft: 10 },
   typingIndicator: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 10, marginBottom: 5, marginLeft: 5 },
-  composer: { alignItems: "flex-end", backgroundColor: colors.elevated, borderColor: colors.borderStrong, borderRadius: radii.large, borderWidth: 1, flexDirection: "row", minHeight: 50, paddingBottom: 5, paddingLeft: 14, paddingRight: 5, paddingTop: 5 },
-  input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 19, maxHeight: 110, minHeight: 39, paddingHorizontal: 0, paddingVertical: 9 },
-  sendButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: 21, height: 42, justifyContent: "center", marginLeft: 8, width: 42 },
+  composer: { alignItems: "center", backgroundColor: colors.elevated, borderColor: colors.borderStrong, borderRadius: 18, borderWidth: 1, flex: 1, flexDirection: "row", minHeight: 36, paddingBottom: 2, paddingLeft: 12, paddingRight: 4, paddingTop: 2 },
+  composerRow: { alignItems: "center", flexDirection: "row", gap: 8 },
+  inputContainer: { flex: 1, minWidth: 0 },
+  attachButton: { alignItems: "center", alignSelf: "center", height: 24, justifyContent: "center", marginRight: 4, width: 24 },
+  imagePreview: { alignItems: "center", alignSelf: "flex-start", backgroundColor: colors.surface, borderRadius: 10, flexDirection: "row", gap: 8, marginBottom: 8, padding: 6 },
+  imagePreviewThumb: { borderRadius: 7, height: 56, width: 56 },
+  input: { color: colors.text, flex: 1, fontFamily: fonts.regular, fontSize: 14, lineHeight: 18, maxHeight: 110, minHeight: 26, paddingHorizontal: 0, paddingVertical: 2 },
+  inputSingleLine: Platform.OS === "web" ? { paddingBottom: 0, paddingTop: 6, textAlignVertical: "center" } : { textAlignVertical: "center" },
+  sendButton: { alignItems: "center", backgroundColor: colors.brand, borderRadius: 15, height: 30, justifyContent: "center", marginLeft: 6, width: 30 },
   sendButtonEmpty: { backgroundColor: colors.surface },
   sendButtonDisabled: { opacity: 1 },
   sendButtonPressed: { backgroundColor: colors.brandPressed, transform: [{ scale: 0.95 }] },

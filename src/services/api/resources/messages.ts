@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient, apiClientWithMeta } from "@/services/api/client";
 import { parsePaginationHeaders, type PaginatedResult } from "@/services/api/pagination";
@@ -8,15 +9,30 @@ export const REACTION_TYPES = ["LIKE", "LOVE", "LAUGH", "WOW", "SAD", "FIRE"] as
 export type ReactionType = (typeof REACTION_TYPES)[number];
 export type ReactionSummary = { type: ReactionType; count: number };
 export type MessageReactionFields = { reactions?: ReactionSummary[]; myReaction?: ReactionType | null };
-export type ReplyPreview = { id: string; userId?: string; senderId?: string; authorName?: string | null; text: string | null; deletedAt: string | null };
-export type GroupMessage = { id: string; groupId: string; userId: string; text: string | null; createdAt: string; updatedAt?: string; editedAt?: string | null; deletedAt?: string | null; isForwarded?: boolean; user?: MessageUser; replyTo?: ReplyPreview | null } & MessageReactionFields;
-export type DirectMessage = { id: string; senderId: string; receiverId: string; text: string | null; createdAt: string; updatedAt?: string; editedAt?: string | null; deletedAt?: string | null; isForwarded?: boolean; sender?: MessageUser; receiver?: MessageUser; replyTo?: ReplyPreview | null } & MessageReactionFields;
+export type ReplyPreview = { id: string; userId?: string; senderId?: string; authorName?: string | null; text: string | null; imageUrl?: string | null; deletedAt: string | null };
+export type GroupMessage = { id: string; groupId: string; userId: string; text: string | null; imageUrl: string | null; createdAt: string; updatedAt?: string; editedAt?: string | null; deletedAt?: string | null; isForwarded?: boolean; user?: MessageUser; replyTo?: ReplyPreview | null } & MessageReactionFields;
+export type DirectMessage = { id: string; senderId: string; receiverId: string; text: string | null; imageUrl: string | null; createdAt: string; updatedAt?: string; editedAt?: string | null; deletedAt?: string | null; isForwarded?: boolean; sender?: MessageUser; receiver?: MessageUser; replyTo?: ReplyPreview | null } & MessageReactionFields;
+export type MessageImageAsset = { uri: string; fileName?: string | null; mimeType?: string | null; file?: Blob | null };
 export type MessagePagination = { page?: number; limit?: number };
 const qs = (p: MessagePagination = {}) => `page=${Math.max(1, p.page ?? 1)}&limit=${Math.min(100, Math.max(1, p.limit ?? 100))}`;
 export async function listGroupMessages(groupId: string, p: MessagePagination = {}): Promise<PaginatedResult<GroupMessage>> { const r = await apiClientWithMeta<GroupMessage[]>(`/groups/${encodeURIComponent(groupId)}/messages?${qs(p)}`); return parsePaginationHeaders(r.data, r.headers); }
 export async function listDirectMessages(userId: string, p: MessagePagination = {}): Promise<PaginatedResult<DirectMessage>> { const r = await apiClientWithMeta<DirectMessage[]>(`/direct-messages/${encodeURIComponent(userId)}?${qs(p)}`); return parsePaginationHeaders(r.data, r.headers); }
 export const sendGroupMessageResource = (groupId: string, text: string, replyToId?: string) => apiClient<GroupMessage>(`/groups/${encodeURIComponent(groupId)}/messages`, { method: "POST", body: { text, ...(replyToId ? { replyToId } : {}) } });
 export const sendDirectMessageResource = (userId: string, text: string, replyToId?: string) => apiClient<DirectMessage>(`/direct-messages/${encodeURIComponent(userId)}`, { method: "POST", body: { text, ...(replyToId ? { replyToId } : {}) } });
+async function imageFormData(asset: MessageImageAsset, text: string, replyToId?: string): Promise<FormData> {
+  const form = new FormData();
+  if (Platform.OS === "web") {
+    const blob = asset.file ?? await (await fetch(asset.uri)).blob();
+    form.append("image", blob, asset.fileName || "message-image.jpg");
+  } else {
+    form.append("image", { uri: asset.uri, name: asset.fileName || "message-image.jpg", type: asset.mimeType || "image/jpeg" } as unknown as Blob);
+  }
+  if (text.trim()) form.append("text", text.trim());
+  if (replyToId) form.append("replyToId", replyToId);
+  return form;
+}
+export async function sendDirectImageMessageResource(userId: string, asset: MessageImageAsset, text = "", replyToId?: string) { return apiClient<DirectMessage>(`/direct-messages/${encodeURIComponent(userId)}/image`, { method: "POST", body: await imageFormData(asset, text, replyToId) }); }
+export async function sendGroupImageMessageResource(groupId: string, asset: MessageImageAsset, text = "", replyToId?: string) { return apiClient<GroupMessage>(`/groups/${encodeURIComponent(groupId)}/messages/image`, { method: "POST", body: await imageFormData(asset, text, replyToId) }); }
 export const editDirectMessageResource = (messageId: string, text: string) => apiClient<DirectMessage>(`/direct-messages/messages/${encodeURIComponent(messageId)}`, { method: "PATCH", body: { text } });
 export const deleteDirectMessageResource = (messageId: string) => apiClient<DirectMessage>(`/direct-messages/messages/${encodeURIComponent(messageId)}`, { method: "DELETE" });
 export const editGroupMessageResource = (groupId: string, messageId: string, text: string) => apiClient<GroupMessage>(`/groups/${encodeURIComponent(groupId)}/messages/${encodeURIComponent(messageId)}`, { method: "PATCH", body: { text } });
@@ -32,6 +48,8 @@ export function useGroupMessagesQuery(groupId?: string, p: MessagePagination = {
 export function useDirectMessagesQuery(userId?: string, p: MessagePagination = {}) { return useQuery({ queryKey: messageKeys.direct(userId ?? "", p), queryFn: () => listDirectMessages(userId as string, p), enabled: Boolean(userId) }); }
 export function useSendGroupMessageMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ groupId, text, replyToId }: { groupId: string; text: string; replyToId?: string }) => sendGroupMessageResource(groupId, text, replyToId), onSuccess: (_, v) => { void c.invalidateQueries({ queryKey: messageKeys.group(v.groupId) }); void c.invalidateQueries({ queryKey: messageKeys.inbox() }); void c.invalidateQueries({ queryKey: messageKeys.unreadCount }); } }); }
 export function useSendDirectMessageMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ userId, text, replyToId }: { userId: string; text: string; replyToId?: string }) => sendDirectMessageResource(userId, text, replyToId), onSuccess: (_, v) => { void c.invalidateQueries({ queryKey: messageKeys.direct(v.userId) }); void c.invalidateQueries({ queryKey: messageKeys.inbox() }); void c.invalidateQueries({ queryKey: messageKeys.unreadCount }); } }); }
+export function useSendDirectImageMessageMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ userId, asset, text, replyToId }: { userId: string; asset: MessageImageAsset; text?: string; replyToId?: string }) => sendDirectImageMessageResource(userId, asset, text, replyToId), onSuccess: (_, v) => { void c.invalidateQueries({ queryKey: messageKeys.direct(v.userId) }); void c.invalidateQueries({ queryKey: messageKeys.inbox() }); void c.invalidateQueries({ queryKey: messageKeys.unreadCount }); } }); }
+export function useSendGroupImageMessageMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ groupId, asset, text, replyToId }: { groupId: string; asset: MessageImageAsset; text?: string; replyToId?: string }) => sendGroupImageMessageResource(groupId, asset, text, replyToId), onSuccess: (_, v) => { void c.invalidateQueries({ queryKey: messageKeys.group(v.groupId) }); void c.invalidateQueries({ queryKey: messageKeys.inbox() }); void c.invalidateQueries({ queryKey: messageKeys.unreadCount }); } }); }
 export function useEditDirectMessageMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ messageId, text }: { messageId: string; text: string }) => editDirectMessageResource(messageId, text), onSuccess: (message) => { void c.invalidateQueries({ queryKey: messageKeys.direct(message.receiverId) }); void c.invalidateQueries({ queryKey: messageKeys.inbox() }); } }); }
 export function useDeleteDirectMessageMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ messageId }: { messageId: string }) => deleteDirectMessageResource(messageId), onSuccess: (message) => { void c.invalidateQueries({ queryKey: messageKeys.direct(message.receiverId) }); void c.invalidateQueries({ queryKey: messageKeys.inbox() }); void c.invalidateQueries({ queryKey: messageKeys.unreadCount }); } }); }
 export function useEditGroupMessageMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ groupId, messageId, text }: { groupId: string; messageId: string; text: string }) => editGroupMessageResource(groupId, messageId, text), onSuccess: (_, v) => { void c.invalidateQueries({ queryKey: messageKeys.group(v.groupId) }); void c.invalidateQueries({ queryKey: messageKeys.inbox() }); } }); }
@@ -42,7 +60,7 @@ export function useSetGroupMessageReactionMutation() { const c = useQueryClient(
 export function useRemoveGroupMessageReactionMutation() { const c = useQueryClient(); return useMutation({ mutationFn: ({ groupId, messageId }: { groupId: string; messageId: string }) => removeGroupMessageReaction(groupId, messageId), onSuccess: (result) => { void c.invalidateQueries({ queryKey: messageKeys.all }); return result; } }); }
 export function useForwardDirectMessageMutation() { return useMutation({ mutationFn: ({ messageId, target }: { messageId: string; target: ForwardTarget }) => forwardDirectMessageResource(messageId, target) }); }
 export function useForwardGroupMessageMutation() { return useMutation({ mutationFn: ({ groupId, messageId, target }: { groupId: string; messageId: string; target: ForwardTarget }) => forwardGroupMessageResource(groupId, messageId, target) }); }
-export type ChatInboxItem = { threadType: "DIRECT" | "GROUP"; threadKey: string; peerUserId?: string; groupId?: string; title: string; avatar: string | null; lastMessage: { id: string; text: string; createdAt: string; sender?: MessageUser }; unreadCount: number };
+export type ChatInboxItem = { threadType: "DIRECT" | "GROUP"; threadKey: string; peerUserId?: string; groupId?: string; title: string; avatar: string | null; lastMessage: { id: string; text: string; imageUrl?: string | null; createdAt: string; sender?: MessageUser }; unreadCount: number };
 export async function listChatInbox(p: MessagePagination = {}): Promise<PaginatedResult<ChatInboxItem>> { const r = await apiClientWithMeta<ChatInboxItem[]>(`/messages/inbox?${qs(p)}`); return parsePaginationHeaders(r.data, r.headers); }
 export async function getChatUnreadCount(): Promise<number> { const result = await apiClient<{ count: number }>("/messages/unread/count"); return result.count; }
 export async function markChatThreadRead(input: { threadType: "DIRECT" | "GROUP"; threadKey: string; messageId?: string }) { return apiClient(`/messages/read`, { method: "POST", body: input }); }

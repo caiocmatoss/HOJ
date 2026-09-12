@@ -15,11 +15,11 @@ import {
 
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { useDeleteGroupMessageMutation, useEditGroupMessageMutation, useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, type GroupMessage } from "@/services/api/resources/messages";
+import { useDeleteGroupMessageMutation, useEditGroupMessageMutation, useGroupMessagesQuery, useMarkChatReadMutation, useSendGroupMessageMutation, useSetGroupMessageReactionMutation, useRemoveGroupMessageReactionMutation, type GroupMessage, type ReactionType } from "@/services/api/resources/messages";
 import { useGroupQuery } from "@/services/api/resources/groups";
-import { emitGroupTyping, joinGroup, leaveGroup, onGroupTyping, onMessageDeleted, onMessageUpdated, onNewMessage, sendSocketMessage } from "@/services/socket";
+import { emitGroupTyping, joinGroup, leaveGroup, onGroupTyping, onMessageDeleted, onMessageUpdated, onMessageReaction, onNewMessage, sendSocketMessage } from "@/services/socket";
 import type { ChatMessage } from "@/store/chat-store";
-type LifecycleChatMessage = ChatMessage & { editedAt?: string | null; deletedAt?: string | null };
+type LifecycleChatMessage = GroupMessage & { editedAt?: string | null; deletedAt?: string | null };
 import { useQueryClient } from "@tanstack/react-query";
 import { messageKeys } from "@/services/api/query-keys";
 
@@ -50,6 +50,8 @@ function normalizeMessage(message: GroupMessage): LifecycleChatMessage {
     userId: message.userId,
     editedAt: message.editedAt,
     deletedAt: message.deletedAt,
+    reactions: message.reactions,
+    myReaction: message.myReaction,
   };
 }
 
@@ -77,6 +79,7 @@ function formatDayLabel(value: string) {
   if (sameDate(date, yesterday)) return "Ontem";
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
 }
+const reactionEmoji: Record<string, string> = { LIKE: "👍", LOVE: "❤️", LAUGH: "😂", WOW: "😮", SAD: "😢", FIRE: "🔥" };
 
 export default function GroupChatExperience() {
   const tabBarHeight = MAIN_TAB_BAR_HEIGHT;
@@ -90,6 +93,8 @@ export default function GroupChatExperience() {
   const sendMutation = useSendGroupMessageMutation();
   const editMutation = useEditGroupMessageMutation();
   const deleteMutation = useDeleteGroupMessageMutation();
+  const setReactionMutation = useSetGroupMessageReactionMutation();
+  const removeReactionMutation = useRemoveGroupMessageReactionMutation();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingOriginalText, setEditingOriginalText] = useState("");
   const [activeContextMessageId, setActiveContextMessageId] = useState<string | null>(null);
@@ -116,6 +121,7 @@ export default function GroupChatExperience() {
   const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
   const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
   const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectReaction = (type: ReactionType) => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (!message || message.deletedAt || !groupId) return; void (message.myReaction === type ? removeReactionMutation.mutateAsync({ groupId, messageId: message.id }) : setReactionMutation.mutateAsync({ groupId, messageId: message.id, type })); };
 
   useEffect(() => {
     const last = messagesQuery.data?.items.at(-1);
@@ -151,6 +157,7 @@ export default function GroupChatExperience() {
     let unsubscribe: (() => void) | null = null;
     let unsubscribeUpdated: (() => void) | null = null;
     let unsubscribeDeleted: (() => void) | null = null;
+    let unsubscribeReaction: (() => void) | null = null;
 
     const connect = async () => {
       setConnecting(true);
@@ -165,6 +172,7 @@ export default function GroupChatExperience() {
         });
         unsubscribeUpdated = onMessageUpdated((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item) } : current); });
       unsubscribeDeleted = onMessageDeleted((message) => { if (message.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === message.id ? message : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (activeContextMessageId === message.id) closeContextMenu(); });
+        unsubscribeReaction = onMessageReaction((event) => { if (event.groupId !== groupId) return; queryClient.setQueryData(messageKeys.group(groupId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: GroupMessage) => item.id === event.messageId ? { ...item, reactions: event.reactions, ...(event.actorUserId === user?.id ? { myReaction: event.reaction } : {}) } : item) } : current); });
         await joinGroup(groupId);
       } catch (socketError) {
         if (active) {
@@ -185,6 +193,7 @@ export default function GroupChatExperience() {
       unsubscribe?.();
       unsubscribeUpdated?.();
       unsubscribeDeleted?.();
+      unsubscribeReaction?.();
       leaveGroup(groupId);
       processedMessageIds.current.clear();
     };
@@ -349,7 +358,7 @@ export default function GroupChatExperience() {
                         )
                       ) : null}
 
-                      <MessageContextActions enabled={isMine && !item.deletedAt} own={isMine} onOpen={(position) => openContextMenu(item.id, position)}>
+                      <MessageContextActions enabled={!item.deletedAt} own={isMine} onOpen={(position) => openContextMenu(item.id, position)}>
                       <View
                         style={[
                           styles.bubble,
@@ -372,6 +381,7 @@ export default function GroupChatExperience() {
                         ) : null}
                       </View>
                       {item.editedAt && !item.deletedAt ? <Text style={styles.editedLabel}>Editada</Text> : null}
+                      {!item.deletedAt && item.reactions?.length ? <View style={styles.reactionRow}>{item.reactions.map((reaction) => <Text key={reaction.type} style={styles.reactionPill}>{reactionEmoji[reaction.type]} {reaction.count}</Text>)}</View> : null}
                       </View>
                       </MessageContextActions>
                     </View>
@@ -393,7 +403,7 @@ export default function GroupChatExperience() {
             />
           )}
 
-          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.userId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
             {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {typingLabel && !editingId ? <Text style={styles.typingIndicator}>{typingLabel}</Text> : null}
@@ -524,6 +534,8 @@ const styles = StyleSheet.create({
   myMessageTime: { color: "#665312" },
   deletedMessageText: { color: colors.textMuted, fontStyle: "italic" },
   editedLabel: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9, marginTop: 2 },
+  reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 },
+  reactionPill: { color: colors.textMuted, fontSize: 11 },
   messageActions: { flexDirection: "row", gap: 8, marginTop: 4 },
   actionText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9 },
   emptyConversation: { alignItems: "center", paddingHorizontal: 18 },

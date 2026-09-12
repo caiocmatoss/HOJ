@@ -95,7 +95,7 @@ assert("delete confirmation is web safe and native confirmed", confirmDelete.inc
 assert("delete remains gated by confirmation", directChat.includes("confirmDelete(() =>") && directChat.includes("deleteMutation.mutateAsync({ messageId })") && groupChat.includes("confirmDelete(() =>") && groupChat.includes("deleteMutation.mutateAsync({ groupId, messageId })"));
 assert("message actions are contextual, not inline", contextActions.includes("onLongPress") && contextActions.includes("contextmenu") && !directChat.includes("styles.messageActions") && !groupChat.includes("styles.messageActions"));
 assert("context target owns bubble width constraint", contextActions.includes('maxWidth: "75%"') && directChat.includes('maxWidth: "100%"') && groupChat.includes('maxWidth: "100%"'));
-assert("deleted messages have no lifecycle actions", directChat.includes("enabled={isMine && !item.deletedAt}") && groupChat.includes("enabled={isMine && !item.deletedAt}"));
+assert("deleted messages have no lifecycle actions", directChat.includes("enabled={!item.deletedAt}") && groupChat.includes("enabled={!item.deletedAt}") && contextActions.includes("own ?"));
 assert("deleted context menu state is cleared", directChat.includes("if (activeContextMessageId === message.id)") && groupChat.includes("if (activeContextMessageId === message.id)"));
 assert("context menu supports escape cleanup", contextActions.includes("onCancel") && directChat.includes("onCancel={closeContextMenu}") && groupChat.includes("onCancel={closeContextMenu}"));
 assert("single edit mode is composer-level", directChat.includes("editingId") && groupChat.includes("editingId") && directChat.includes("editBar") && groupChat.includes("editBar") && directChat.includes("setEditingId(null)") && groupChat.includes("setEditingId(null)"));
@@ -108,7 +108,14 @@ assert("outside click does not cancel edit mode", directChat.includes("onCancel=
 assert("socket lifecycle events update cache by id", directChat.includes("onDirectMessageUpdated") && directChat.includes("onDirectMessageDeleted") && groupChat.includes("onMessageUpdated") && groupChat.includes("onMessageDeleted"));
 assert("deleted messages render safe placeholder", directChat.includes("Mensagem excluída") && groupChat.includes("Mensagem excluída"));
 assert("message lifecycle schema fields exist", messagesResource.includes("editedAt") && messagesResource.includes("deletedAt"));
-assert("reactions absent from 5.6A", !messagesResource.includes("reaction") && !directChat.includes("reaction") && !groupChat.includes("reaction"));
+assert("fixed ReactionType mapping", messagesResource.includes('REACTION_TYPES') && messagesResource.includes('type ReactionType'));
+assert("reaction resources use apiClient", messagesResource.includes('setDirectMessageReaction') && messagesResource.includes('setGroupMessageReaction') && messagesResource.includes('method: "PUT"'));
+assert("reaction context supports peers", contextActions.includes('reaction') && directChat.includes('enabled={!item.deletedAt}') && groupChat.includes('enabled={!item.deletedAt}'));
+assert("reactions do not affect unread or inbox", !messagesResource.includes('invalidateQueries({ queryKey: messageKeys.unreadCount })') || messagesResource.includes('useSetDirectMessageReactionMutation'));
+assert("deleted messages hide reactions", directChat.includes('!item.deletedAt && item.reactions') && groupChat.includes('!item.deletedAt && item.reactions'));
+assert("reaction pills do not expose user lists", !messagesResource.includes('reactedBy') && !messagesResource.includes('userIds'));
+assert("context menu uses safe viewport clamping", contextActions.includes("SAFE_MARGIN") && contextActions.includes("window.innerWidth") && contextActions.includes("window.innerHeight") && contextActions.includes("clampMenuPosition"));
+assert("context menu remains a single overlay", contextActions.includes('position: "absolute"') && directChat.includes("activeContextMessageId ? <MessageActionMenu") && groupChat.includes("activeContextMessageId ? <MessageActionMenu"));
 
 for (const token of ["Clos Lounge", "Primavera Sound SP", "Lara", "Mateus", "Mariana F.", "Ricardo A.", "Parcels", "LCD Soundsystem"]) {
   const runtime = ["src/features", "src/components", "src/services", "src/store"]

@@ -24,6 +24,8 @@ export type ServerMessage = {
   updatedAt?: string;
   editedAt?: string | null;
   deletedAt?: string | null;
+  reactions?: Array<{ type: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE"; count: number }>;
+  myReaction?: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE" | null;
 
   user?: {
     id: string;
@@ -42,6 +44,8 @@ export type DirectServerMessage = {
   updatedAt?: string;
   editedAt?: string | null;
   deletedAt?: string | null;
+  reactions?: Array<{ type: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE"; count: number }>;
+  myReaction?: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE" | null;
 
   sender?: {
     id: string;
@@ -60,6 +64,7 @@ export type DirectServerMessage = {
 export type DirectTypingData = { userId: string; isTyping: boolean; occurredAt: string };
 export type GroupTypingData = { groupId: string; userId: string; user: { id: string; name: string; avatar?: string | null }; isTyping: boolean; occurredAt: string };
 export type DirectReadData = { userId: string; peerUserId: string; lastReadAt: string; lastReadMessageId: string };
+export type MessageReactionData = { messageId: string; actorUserId: string; reaction: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE" | null; reactions: Array<{ type: "LIKE" | "LOVE" | "LAUGH" | "WOW" | "SAD" | "FIRE"; count: number }>; occurredAt: string; groupId?: string; direct?: boolean };
 
 export type ChatErrorData = {
   code?: string;
@@ -166,6 +171,8 @@ type ServerToClientEvents = {
   "direct:message:deleted": (message: DirectServerMessage) => void;
   "direct:typing": (data: DirectTypingData) => void;
   "direct:read": (data: DirectReadData) => void;
+  "direct:message:reaction:updated": (data: MessageReactionData) => void;
+  "message:reaction:updated": (data: MessageReactionData) => void;
   "chat:typing": (data: GroupTypingData) => void;
 
   /* -------------------------
@@ -2028,6 +2035,8 @@ export function onDirectMessageUpdated(callback: (message: DirectServerMessage) 
 export function onDirectMessageDeleted(callback: (message: DirectServerMessage) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:message:deleted", callback); return () => currentSocket.off("direct:message:deleted", callback); }
 export function onMessageUpdated(callback: (message: ServerMessage) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("message:updated", callback); return () => currentSocket.off("message:updated", callback); }
 export function onMessageDeleted(callback: (message: ServerMessage) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("message:deleted", callback); return () => currentSocket.off("message:deleted", callback); }
+export function onDirectMessageReaction(callback: (data: MessageReactionData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("direct:message:reaction:updated", callback); return () => currentSocket.off("direct:message:reaction:updated", callback); }
+export function onMessageReaction(callback: (data: MessageReactionData) => void): () => void { const currentSocket = connectSocket(); currentSocket.on("message:reaction:updated", callback); return () => currentSocket.off("message:reaction:updated", callback); }
 
 /* =========================================================
  * LISTENERS DE CHAT DE GRUPO

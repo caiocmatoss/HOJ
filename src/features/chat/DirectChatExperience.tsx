@@ -17,7 +17,7 @@ import {
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useFriendsQuery, type Friend } from "@/services/api/resources/friends";
-import { useDeleteDirectMessageMutation, useDirectMessagesQuery, useDirectReadStateQuery, useEditDirectMessageMutation, useMarkChatReadMutation, useSendDirectMessageMutation, type DirectMessage } from "@/services/api/resources/messages";
+import { useDeleteDirectMessageMutation, useDirectMessagesQuery, useDirectReadStateQuery, useEditDirectMessageMutation, useMarkChatReadMutation, useSendDirectMessageMutation, useSetDirectMessageReactionMutation, useRemoveDirectMessageReactionMutation, type DirectMessage, type ReactionType } from "@/services/api/resources/messages";
 import { messageKeys } from "@/services/api/query-keys";
 import {
   joinDirectConversation,
@@ -28,9 +28,10 @@ import {
   emitDirectTyping,
   onDirectMessageUpdated,
   onDirectMessageDeleted,
+  onDirectMessageReaction,
 } from "@/services/socket";
 import type { DirectChatMessage } from "@/store/chat-store";
-type LifecycleDirectChatMessage = DirectChatMessage & { editedAt?: string | null; deletedAt?: string | null };
+type LifecycleDirectChatMessage = DirectMessage & { editedAt?: string | null; deletedAt?: string | null };
 import Svg, { Circle, Path } from "react-native-svg";
 import { usePresenceStore } from "@/store/presence-store";
 import { useUserStore } from "@/store/user-store";
@@ -76,6 +77,7 @@ function formatDayLabel(value: string) {
     month: "long",
   });
 }
+const reactionEmoji: Record<string, string> = { LIKE: "👍", LOVE: "❤️", LAUGH: "😂", WOW: "😮", SAD: "😢", FIRE: "🔥" };
 
 function isMessageReadByPeer(message: DirectMessage, cursor?: { lastReadAt: string | null; lastReadMessageId: string | null }) {
   if (!cursor?.lastReadAt) return false;
@@ -103,6 +105,8 @@ export default function DirectChatExperience() {
   const sendMutation = useSendDirectMessageMutation();
   const editMutation = useEditDirectMessageMutation();
   const deleteMutation = useDeleteDirectMessageMutation();
+  const setReactionMutation = useSetDirectMessageReactionMutation();
+  const removeReactionMutation = useRemoveDirectMessageReactionMutation();
   const markReadMutation = useMarkChatReadMutation();
   const queryClient = useQueryClient();
   const sending = sendMutation.isPending;
@@ -125,6 +129,7 @@ export default function DirectChatExperience() {
   const closeContextMenu = () => { setActiveContextMessageId(null); setContextMenuPosition({ x: 24, y: 180 }); };
   const openContextMenu = (messageId: string, position: { x: number; y: number }) => { setActiveContextMessageId(messageId); setContextMenuPosition(position); };
   const selectEditMessage = () => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (message && !message.deletedAt) { setEditingId(message.id); setEditingOriginalText(message.text ?? ""); setText(message.text ?? ""); } };
+  const selectReaction = (type: ReactionType) => { const message = messages.find((item) => item.id === activeContextMessageId); closeContextMenu(); if (!message || message.deletedAt) return; void (message.myReaction === type ? removeReactionMutation.mutateAsync({ messageId: message.id }) : setReactionMutation.mutateAsync({ messageId: message.id, type })); };
 
   useEffect(() => {
     const last = messagesQuery.data?.items.at(-1);
@@ -199,6 +204,7 @@ export default function DirectChatExperience() {
     let unsubscribe: (() => void) | null = null;
     let unsubscribeUpdated: (() => void) | null = null;
     let unsubscribeDeleted: (() => void) | null = null;
+    let unsubscribeReaction: (() => void) | null = null;
 
     const connect = async () => {
       setConnecting(true);
@@ -221,6 +227,7 @@ export default function DirectChatExperience() {
         });
         unsubscribeUpdated = onDirectMessageUpdated((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item) } : current); });
         unsubscribeDeleted = onDirectMessageDeleted((message) => { if ((message.senderId === user.id && message.receiverId === friendId) || (message.senderId === friendId && message.receiverId === user.id)) { queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === message.id ? message : item) } : current); if (editingId === message.id) { setEditingId(null); setEditingOriginalText(""); setText(""); } if (activeContextMessageId === message.id) closeContextMenu(); } });
+        unsubscribeReaction = onDirectMessageReaction((event) => queryClient.setQueryData(messageKeys.direct(friendId, { page: 1, limit: 100 }), (current: any) => current ? { ...current, items: current.items.map((item: DirectMessage) => item.id === event.messageId ? { ...item, reactions: event.reactions, ...(event.actorUserId === user.id ? { myReaction: event.reaction } : {}) } : item) } : current));
 
         await joinDirectConversation(friendId);
       } catch (socketError) {
@@ -242,6 +249,7 @@ export default function DirectChatExperience() {
       unsubscribe?.();
       unsubscribeUpdated?.();
       unsubscribeDeleted?.();
+      unsubscribeReaction?.();
       leaveDirectConversation(friendId);
     };
   }, [accessToken, conversationId, editingId, friendId, queryClient, user]);
@@ -403,7 +411,7 @@ export default function DirectChatExperience() {
                   ) : null}
 
                   <View style={[styles.messageRow, isMine && styles.myMessageRow]}>
-                    <MessageContextActions enabled={isMine && !item.deletedAt} own={isMine} onOpen={(position) => openContextMenu(item.id, position)}>
+                    <MessageContextActions enabled={!item.deletedAt} own={isMine} onOpen={(position) => openContextMenu(item.id, position)}>
                     <View
                       style={[
                         styles.bubble,
@@ -423,6 +431,7 @@ export default function DirectChatExperience() {
                         ) : null}
                       </View>
                       {item.editedAt && !item.deletedAt ? <Text style={styles.editedLabel}>Editada</Text> : null}
+                      {!item.deletedAt && item.reactions?.length ? <View style={styles.reactionRow}>{item.reactions.map((reaction) => <Text key={reaction.type} style={styles.reactionPill}>{reactionEmoji[reaction.type]} {reaction.count}</Text>)}</View> : null}
                     </View>
                     </MessageContextActions>
                   </View>
@@ -443,7 +452,7 @@ export default function DirectChatExperience() {
             }
           />
 
-          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
+          {activeContextMessageId ? <MessageActionMenu position={contextMenuPosition} own={Boolean(messages.find((item) => item.id === activeContextMessageId)?.senderId === user?.id)} myReaction={messages.find((item) => item.id === activeContextMessageId)?.myReaction} onReaction={selectReaction} onEdit={selectEditMessage} onDelete={() => { const id = activeContextMessageId; closeContextMenu(); if (id) handleDelete(id); }} onCancel={closeContextMenu} /> : null}
           <View style={[styles.composerArea, { paddingBottom: tabBarHeight + CHAT_COMPOSER_TAB_GAP }]}>
             {editingId ? <View style={styles.editBar}><View style={styles.editBarCopy}><Text style={styles.editBarTitle}>Editando mensagem</Text><Text numberOfLines={1} style={styles.editBarText}>{editingOriginalText}</Text></View><Pressable accessibilityLabel="Cancelar edição" onPress={() => { setEditingId(null); setEditingOriginalText(""); setText(""); }}><Text style={styles.editBarCancel}>Cancelar</Text></Pressable></View> : null}
             {remoteTyping && !editingId ? <Text style={styles.typingIndicator}>{friend.name} está digitando...</Text> : null}
@@ -594,6 +603,8 @@ const styles = StyleSheet.create({
   myMessageTime: { color: "#665312" },
   deletedMessageText: { color: colors.textMuted, fontStyle: "italic" },
   editedLabel: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9, marginTop: 2 },
+  reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 },
+  reactionPill: { color: colors.textMuted, fontSize: 11 },
   messageActions: { flexDirection: "row", gap: 8, marginTop: 4 },
   actionText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 9 },
   emptyConversation: { alignItems: "center", paddingHorizontal: 18 },

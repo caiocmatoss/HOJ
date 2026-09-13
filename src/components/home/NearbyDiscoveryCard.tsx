@@ -5,7 +5,7 @@ import { colors, fonts, radii } from "@/theme/tokens";
 
 export type NearbyDiscoveryItem = {
   id: string;
-  kind: "venue" | "event";
+  kind: "venue" | "event" | "external";
   title: string;
   category: string;
   distance?: string;

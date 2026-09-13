@@ -1,3 +1,9 @@
+export const NEARBY_RADIUS_KM = 5;
+
+export function isWithinNearbyRadius(distanceInMeters: number) {
+  return Number.isFinite(distanceInMeters) && distanceInMeters <= NEARBY_RADIUS_KM * 1000;
+}
+
 export function calculateDistance(
   lat1: number,
   lon1: number,

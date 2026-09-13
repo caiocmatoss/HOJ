@@ -3,6 +3,10 @@ export const venueKeys = {
   list: (params: Record<string, unknown> = {}) => ["venues", "list", params] as const,
   detail: (id: string) => ["venues", "detail", id] as const,
 };
+export const discoveryKeys = {
+  all: ["discovery"] as const,
+  nearby: (lat: number, lng: number, radius: number) => ["discovery", "nearby", lat, lng, radius] as const,
+};
 
 export const eventKeys = {
   all: ["events"] as const,

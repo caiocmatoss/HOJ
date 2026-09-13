@@ -66,7 +66,11 @@ assert("Nearby radius has one shared source", distance.includes("NEARBY_RADIUS_K
 assert("Nearby radius is five kilometers", /NEARBY_RADIUS_KM\s*=\s*5/.test(distance));
 assert("Home map and list use nearby collections", home.includes("nearbyVenues") && home.includes("nearbyEvents") && home.includes("mapVenues") && home.includes("mapEvents"));
 assert("Nearby list includes every in-radius entity", !home.includes(".slice(0,4)"));
-assert("Global search remains unrestricted", home.includes("const sourceVenues = q ? venues : nearbyVenues") && home.includes("const sourceEvents = q ? events : nearbyEvents"));
+assert("Global search remains unrestricted", home.includes("const sourceVenues = q ? venues :") && home.includes("const sourceEvents = q ? events :") && home.includes("const q = query.trim().toLowerCase()"));
+assert("Map and list share category-filtered collections", home.includes("filteredVenues") && home.includes("filteredEvents") && home.includes("filteredExternalPlaces") && home.includes("externalPlaces={filteredExternalPlaces}"));
+assert("Nearby items are sorted by distance", home.includes("sort: (a, b) => (a.sort ?? 0) - (b.sort ?? 0)") || home.includes("sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))"));
+assert("External selection is single-state and preview-only", home.includes("selectedExternal") && home.includes("setSelectedExternal(place)") && externalPlaceSheet.includes("ExternalPlaceSheet"));
+assert("External places do not expose fake occupancy or rating", !externalPlaceSheet.includes("rating") && !externalPlaceSheet.includes("occupancy"));
 assert("Map does not apply a divergent radius", !realMapWeb.includes("<= 50") && !realMapWeb.includes("slice(0, 20)"));
 assert("Nearby radius boundary is inclusive", distance.includes("distanceInMeters <= NEARBY_RADIUS_KM * 1000"));
 assert("Nearby discovery uses backend resource", discoveryResource.includes("/discovery/nearby") && home.includes("useNearbyPlacesQuery"));

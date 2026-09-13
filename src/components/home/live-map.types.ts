@@ -7,6 +7,7 @@ export type LiveMapProps = {
   events?: ApiEvent[];
   externalPlaces?: NearbyPlace[];
   selectedEventId?: string | null;
+  selectedExternalId?: string | null;
   onEventPress?: (event: ApiEvent) => void;
   onExternalPlacePress?: (place: NearbyPlace) => void;
   recenterKey?: number;

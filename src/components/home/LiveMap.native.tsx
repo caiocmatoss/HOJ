@@ -6,7 +6,7 @@ import { getVenues, type ApiVenue } from "@/services/api";
 import { useLocationStore } from "@/store/location-store";
 import type { LiveMapProps } from "./live-map.types";
 
-export function LiveMap({ venues, events = [], externalPlaces = [], selectedVenueId, selectedEventId, onVenuePress, onEventPress, onExternalPlacePress, onRegionChanged, onLocationPress, recenterKey, height = 430 }: LiveMapProps) {
+export function LiveMap({ venues, events = [], externalPlaces = [], selectedVenueId, selectedEventId, selectedExternalId, onVenuePress, onEventPress, onExternalPlacePress, onRegionChanged, onLocationPress, recenterKey, height = 430 }: LiveMapProps) {
   const mapRef = useRef<MapView>(null);
   const latitude = useLocationStore((state) => state.latitude);
   const longitude = useLocationStore((state) => state.longitude);
@@ -22,7 +22,7 @@ export function LiveMap({ venues, events = [], externalPlaces = [], selectedVenu
       <MapView ref={mapRef} style={styles.map} initialRegion={initialRegion} showsUserLocation={hasLocation} onRegionChangeComplete={(_region: Region) => onRegionChanged?.()}>
         {displayedVenues.map((venue) => { const lat = Number(venue.latitude); const lng = Number(venue.longitude); if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null; const selected = selectedVenueId === venue.id; return <Marker key={venue.id} coordinate={{ latitude: lat, longitude: lng }} onPress={() => onVenuePress?.(venue)} title={venue.name} description={venue.category}><View style={[styles.marker, selected && styles.markerSelected]}><Ionicons name="location" size={selected ? 25 : 20} color={selected ? "#0B0D0F" : "#F5C542"} /></View></Marker>; })}
         {events.map((event) => { const lat = Number(event.venue?.latitude); const lng = Number(event.venue?.longitude); if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null; const selected = selectedEventId === event.id; return <Marker key={`event-${event.id}`} coordinate={{ latitude: lat, longitude: lng }} onPress={() => onEventPress?.(event)} title={event.title} description={event.category}><View style={[styles.marker, selected && styles.markerSelected]}><Ionicons name="calendar" size={selected ? 24 : 19} color={selected ? "#0B0D0F" : "#6ABFA0"} /></View></Marker>; })}
-        {externalPlaces.map((place) => { const lat = Number(place.latitude); const lng = Number(place.longitude); if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null; return <Marker key={`external-${place.externalId}`} coordinate={{ latitude: lat, longitude: lng }} onPress={() => onExternalPlacePress?.(place)} title={place.name} description={place.category}><View style={[styles.marker, styles.externalMarker]}><Ionicons name="compass-outline" size={19} color="#D79BFF" /></View></Marker>; })}
+        {externalPlaces.map((place) => { const lat = Number(place.latitude); const lng = Number(place.longitude); if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null; const selected = selectedExternalId === place.id; return <Marker key={`external-${place.externalId}`} coordinate={{ latitude: lat, longitude: lng }} onPress={() => onExternalPlacePress?.(place)} title={place.name} description={place.category}><View style={[styles.marker, styles.externalMarker, selected && styles.markerSelected]}><Ionicons name="compass-outline" size={selected ? 23 : 19} color={selected ? "#0B0D0F" : "#D79BFF"} /></View></Marker>; })}
       </MapView>
       <View style={styles.mapLabel}><Text style={styles.mapLabelText}>Mapa ao vivo</Text></View>
     </View>

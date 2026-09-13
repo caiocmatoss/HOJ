@@ -7,6 +7,7 @@ export type RealMapProps = {
   externalPlaces?: NearbyPlace[];
   selectedVenueId?: string | null;
   selectedEventId?: string | null;
+  selectedExternalId?: string | null;
   onVenuePress?: (venue: ApiVenue) => void;
   onEventPress?: (event: ApiEvent) => void;
   onExternalPlacePress?: (place: NearbyPlace) => void;

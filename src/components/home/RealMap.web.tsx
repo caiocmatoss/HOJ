@@ -14,7 +14,7 @@ function validPoint(latitude: unknown, longitude: unknown): [number, number] | n
   return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? [lng, lat] : null;
 }
 
-export function RealMap({ venues, events, externalPlaces = [], selectedVenueId, selectedEventId, onVenuePress, onEventPress, onExternalPlacePress, recenterKey, height = 480 }: RealMapProps) {
+export function RealMap({ venues, events, externalPlaces = [], selectedVenueId, selectedEventId, selectedExternalId, onVenuePress, onEventPress, onExternalPlacePress, recenterKey, height = 480 }: RealMapProps) {
   const nodeRef = useRef<any>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapLoading, setMapLoading] = useState(true);
@@ -69,6 +69,13 @@ export function RealMap({ venues, events, externalPlaces = [], selectedVenueId, 
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const selected = displayPoints.find((item) => item.kind === "venue" ? item.venue.id === selectedVenueId : item.kind === "event" ? item.event.id === selectedEventId : item.place.id === selectedExternalId);
+    if (selected) map.easeTo({ center: selected.point, duration: 350 });
+  }, [displayPoints, mapReady, selectedEventId, selectedExternalId, selectedVenueId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !mapReady) return undefined;
     const markers: maplibregl.Marker[] = [];
     const addMarker = (point: [number, number], color: string, selected: boolean, onClick: () => void, label: string) => {
@@ -82,7 +89,7 @@ export function RealMap({ venues, events, externalPlaces = [], selectedVenueId, 
     };
     displayVenuePoints.forEach(({ venue, point }) => addMarker(point, "#F5C542", selectedVenueId === venue.id, () => onVenuePress?.(venue), venue.name));
     displayEventPoints.forEach(({ event, point }) => addMarker(point, "#6ABFA0", selectedEventId === event.id, () => onEventPress?.(event), event.title));
-    displayExternalPoints.forEach(({ place, point }) => addMarker(point, "#D79BFF", false, () => onExternalPlacePress?.(place), place.name));
+    displayExternalPoints.forEach(({ place, point }) => addMarker(point, "#D79BFF", selectedExternalId === place.id, () => onExternalPlacePress?.(place), place.name));
     const userPoint = validPoint(latitude, longitude);
     if (userPoint) {
       const element = document.createElement("div");
@@ -92,7 +99,7 @@ export function RealMap({ venues, events, externalPlaces = [], selectedVenueId, 
       markers.push(marker);
     }
     return () => markers.forEach((marker) => marker.remove());
-  }, [displayEventPoints, displayExternalPoints, displayVenuePoints, latitude, longitude, mapReady, onEventPress, onExternalPlacePress, onVenuePress, selectedEventId, selectedVenueId]);
+  }, [displayEventPoints, displayExternalPoints, displayVenuePoints, latitude, longitude, mapReady, onEventPress, onExternalPlacePress, onVenuePress, selectedEventId, selectedExternalId, selectedVenueId]);
 
   return <View style={[styles.container, { height }]}><View ref={nodeRef} style={styles.map} />{mapLoading ? <View pointerEvents="none" style={styles.status}><ActivityIndicator color="#F5C542" /><Text style={styles.statusText}>Carregando mapa…</Text></View> : null}{mapError ? <View pointerEvents="none" style={styles.status}><Text style={styles.statusText}>{mapError}</Text></View> : null}</View>;
 }

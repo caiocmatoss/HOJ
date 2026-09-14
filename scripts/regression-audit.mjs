@@ -71,6 +71,9 @@ assert("Map and list share category-filtered collections", home.includes("filter
 assert("Nearby items are sorted by distance", home.includes("sort: (a, b) => (a.sort ?? 0) - (b.sort ?? 0)") || home.includes("sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))"));
 assert("External selection is single-state and preview-only", home.includes("selectedExternal") && home.includes("setSelectedExternal(place)") && externalPlaceSheet.includes("ExternalPlaceSheet"));
 assert("External places do not expose fake occupancy or rating", !externalPlaceSheet.includes("rating") && !externalPlaceSheet.includes("occupancy"));
+assert("Internal venue favorites stay backend-backed", home.includes("useFavoritesQuery") && home.includes("useFavoriteMutation") && home.includes("favoriteVenueIds"));
+assert("External places have no favorite action", !externalPlaceSheet.includes("favorite") && !externalPlaceSheet.includes("heart"));
+assert("Nearby empty state respects active filter/search", home.includes("Nenhum resultado") && home.includes("selectedCategory") && home.includes("Nenhum ${selectedCategory.toLowerCase()} encontrado"));
 assert("Map does not apply a divergent radius", !realMapWeb.includes("<= 50") && !realMapWeb.includes("slice(0, 20)"));
 assert("Nearby radius boundary is inclusive", distance.includes("distanceInMeters <= NEARBY_RADIUS_KM * 1000"));
 assert("Nearby discovery uses backend resource", discoveryResource.includes("/discovery/nearby") && home.includes("useNearbyPlacesQuery"));

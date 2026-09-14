@@ -5,8 +5,8 @@ export function HomeLoadingOverlay() {
   return <View testID="home-loading" style={styles.loading}><View style={styles.spinner} /><Text style={styles.loadingText}>Encontrando o que há por aí…</Text></View>;
 }
 
-export function HomeNoResultsOverlay({ onRetry }: { onRetry?: () => void }) {
-  return <View testID="home-no-results" style={styles.noResults}><Text style={styles.resultIcon}>{"\u{1F311}"}</Text><Text style={styles.resultTitle}>Nada aqui agora</Text><Text style={styles.resultBody}>Esta área está quieta por enquanto. Tente se mover para outro bairro.</Text><Pressable onPress={onRetry} disabled={!onRetry} style={styles.button}><Text style={styles.buttonText}>Explorar área maior</Text></Pressable></View>;
+export function HomeNoResultsOverlay({ onRetry, title = "Nada aqui agora", body = "Esta área está quieta por enquanto. Tente se mover para outro bairro." }: { onRetry?: () => void; title?: string; body?: string }) {
+  return <View testID="home-no-results" style={styles.noResults}><Text style={styles.resultIcon}>{"\u{1F311}"}</Text><Text style={styles.resultTitle}>{title}</Text><Text style={styles.resultBody}>{body}</Text><Pressable onPress={onRetry} disabled={!onRetry} style={styles.button}><Text style={styles.buttonText}>Explorar área maior</Text></Pressable></View>;
 }
 
 export function HomeNoLocationOverlay({ onEnable }: { onEnable?: () => void }) {

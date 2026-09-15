@@ -108,6 +108,10 @@ export type LocationSavedData =
     nearbyFriends?: number;
   };
 
+export type VenuePresenceChangedData = {
+  venueId: string;
+};
+
 /* =========================================================
  * EVENTOS SERVIDOR -> CLIENTE
  * ======================================================= */
@@ -194,6 +198,7 @@ type ServerToClientEvents = {
   "presence:changed": (
     data: PresenceChangedData,
   ) => void;
+  "venue:presence:changed": (data: VenuePresenceChangedData) => void;
   "location:joined": (
     data: LocationJoinedData,
   ) => void;
@@ -273,6 +278,8 @@ type ClientToServerEvents = {
    * ----------------------- */
 
   "presence:get": () => void;
+  "venue:subscribe": (data: { venueId: string }) => void;
+  "venue:unsubscribe": (data: { venueId: string }) => void;
 
   "location:join": (
     callback?: (response: unknown) => void,
@@ -324,6 +331,7 @@ const directJoinPromises =
     string,
     Promise<void>
   >();
+const joinedVenues = new Set<string>();
 let joinedLocationRoom: boolean = false;
 
 let locationJoinPromise:
@@ -477,6 +485,10 @@ export function connectSocket(): AppSocket {
             error,
           );
         });
+      }
+
+      for (const venueId of joinedVenues) {
+        socket?.emit("venue:subscribe", { venueId });
       }
     },
   );
@@ -910,6 +922,7 @@ export function disconnectSocket(): void {
 
   joinedLocationRoom = false;
   locationJoinPromise = null;
+  joinedVenues.clear();
 
   usePresenceStore
     .getState()
@@ -1969,6 +1982,37 @@ export async function joinNotifications(): Promise<void> {
       notificationsJoinPromise = null;
     }
   }
+}
+
+export function subscribeToVenue(venueId: string): void {
+  const normalizedVenueId = venueId.trim();
+  if (!normalizedVenueId) return;
+  joinedVenues.add(normalizedVenueId);
+  const currentSocket = connectSocket();
+  if (currentSocket.connected) {
+    currentSocket.emit("venue:subscribe", { venueId: normalizedVenueId });
+  }
+}
+
+export function unsubscribeFromVenue(venueId: string): void {
+  const normalizedVenueId = venueId.trim();
+  if (!normalizedVenueId) return;
+  joinedVenues.delete(normalizedVenueId);
+  if (socket?.connected) {
+    socket.emit("venue:unsubscribe", { venueId: normalizedVenueId });
+  }
+}
+
+export function onVenuePresenceChanged(callback: (data: VenuePresenceChangedData) => void): () => void {
+  const currentSocket = connectSocket();
+  currentSocket.on("venue:presence:changed", callback);
+  return () => currentSocket.off("venue:presence:changed", callback);
+}
+
+export function onSocketConnect(callback: () => void): () => void {
+  const currentSocket = connectSocket();
+  currentSocket.on("connect", callback);
+  return () => currentSocket.off("connect", callback);
 }
 
 export function leaveNotifications(): void {

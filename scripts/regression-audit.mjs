@@ -37,6 +37,8 @@ const distance = read("src/utils/distance.ts");
 const discoveryResource = read("src/services/api/resources/discovery.ts");
 const venueDetail = read("src/features/discovery/VenueDetailExperience.tsx");
 const venuePresenceResource = read("src/services/api/resources/venue-presence.ts");
+const venuePresenceQueryKeys = read("src/services/api/query-keys.ts");
+const venuePresenceSocket = read("src/services/socket.ts");
 const homeSearch = read("src/components/home/figma/FigmaHomeSearch.tsx");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
@@ -101,6 +103,13 @@ assert("Venue Detail uses safe presence endpoint", venuePresenceResource.include
 assert("Venue presence type excludes private fields", venuePresenceResource.includes("venueId: string") && venuePresenceResource.includes("count: number") && venuePresenceResource.includes("name: string") && venuePresenceResource.includes("avatar: string | null") && !venuePresenceResource.includes("email"));
 assert("Check-in mutations invalidate scoped presence", read("src/services/api/resources/checkins.ts").includes("venuePresenceKeys.detail(venueId)"));
 assert("Venue presence has no polling or socket", !venuePresenceResource.includes("refetchInterval") && !venuePresenceResource.includes("setInterval") && !venueDetail.includes("connectSocket"));
+assert("Venue Detail uses central venue realtime socket", venueDetail.includes("subscribeToVenue") && venueDetail.includes("onVenuePresenceChanged") && venueDetail.includes("unsubscribeFromVenue") && venueDetail.includes("onSocketConnect"));
+assert("Venue realtime protocol is defined in central socket service", venuePresenceSocket.includes('"venue:subscribe"') && venuePresenceSocket.includes('"venue:unsubscribe"') && venuePresenceSocket.includes('"venue:presence:changed"') && !venueDetail.includes("io("));
+assert("Venue realtime invalidates only the scoped presence query", venueDetail.includes("queryClient.invalidateQueries") && venueDetail.includes("venuePresenceKeys.detail(normalizedVenueId)") && venuePresenceQueryKeys.includes("venuePresenceKeys"));
+assert("Venue realtime validates event venue id", venueDetail.includes("typeof payload?.venueId !== \"string\"") && venueDetail.includes("payload.venueId !== normalizedVenueId"));
+assert("Venue realtime cleans listener and unsubscribes", venueDetail.includes("cleanupPresenceListener?.()") && venueDetail.includes("cleanupConnectListener?.()") && venueDetail.includes("unsubscribeFromVenue(normalizedVenueId)"));
+assert("Venue realtime reconnect re-subscribes and reconciles REST", venuePresenceSocket.includes("for (const venueId of joinedVenues)") && venuePresenceSocket.includes('socket?.emit("venue:subscribe"') && venueDetail.includes("onSocketConnect(() =>"));
+assert("Venue realtime has no polling or parallel presence store", !venueDetail.includes("setInterval") && !venuePresenceSocket.includes("refetchInterval") && !venueDetail.includes("setPresenceCount") && !venueDetail.includes("setFriendsPresent"));
 assert("Venue Detail has no fake presence count", !venueDetail.includes("45 pessoas") && !venueDetail.includes("100 pessoas"));
 assert("Explore distinguishes zero results from total error", explore.includes("totalError") && explore.includes("Nenhum resultado para") && explore.includes("Não foi possível carregar"));
 assert("Explore keeps partial source data", explore.includes("venuesQuery.error && eventsQuery.error") && explore.includes("visibleVenues.length") && explore.includes("visibleEvents.length"));

@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { ApiError } from "@/services/api/errors";
 import { useVenueQuery } from "@/services/api/resources/venues";
@@ -10,18 +11,47 @@ import { useActiveCheckinQuery, useCheckinMutation, useCheckoutMutation } from "
 import { useFavoriteMutation, useFavoritesQuery } from "@/services/api/resources/favorites";
 import { colors, fonts, radii } from "@/theme/tokens";
 import { getVenueAvailabilityState, getVenueOccupancyState } from "@/utils/venue-state";
+import { onSocketConnect, onVenuePresenceChanged, subscribeToVenue, unsubscribeFromVenue } from "@/services/socket";
+import { venuePresenceKeys } from "@/services/api/query-keys";
 
 export default function VenueDetailExperience() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const venueId = Array.isArray(params.id) ? params.id[0] : params.id;
   const venueQuery = useVenueQuery(venueId);
   const presenceQuery = useVenuePresenceQuery(venueId);
+  const queryClient = useQueryClient();
   const favoritesQuery = useFavoritesQuery();
   const favoriteMutation = useFavoriteMutation();
   const activeCheckinQuery = useActiveCheckinQuery();
   const checkinMutation = useCheckinMutation();
   const checkoutMutation = useCheckoutMutation();
   const [message, setMessage] = useState<string | null>(null);
+  const normalizedVenueId = typeof venueId === "string" ? venueId.trim() : "";
+
+  useEffect(() => {
+    if (!normalizedVenueId) return;
+    let cleanupPresenceListener: (() => void) | undefined;
+    let cleanupConnectListener: (() => void) | undefined;
+    try {
+      const handlePresenceChanged = (payload: { venueId?: unknown }) => {
+        if (typeof payload?.venueId !== "string" || payload.venueId !== normalizedVenueId) return;
+        void queryClient.invalidateQueries({ queryKey: venuePresenceKeys.detail(normalizedVenueId) });
+      };
+      cleanupPresenceListener = onVenuePresenceChanged(handlePresenceChanged);
+      cleanupConnectListener = onSocketConnect(() => {
+        void queryClient.invalidateQueries({ queryKey: venuePresenceKeys.detail(normalizedVenueId) });
+      });
+      subscribeToVenue(normalizedVenueId);
+    } catch {
+      cleanupPresenceListener?.();
+      cleanupConnectListener?.();
+    }
+    return () => {
+      cleanupPresenceListener?.();
+      cleanupConnectListener?.();
+      unsubscribeFromVenue(normalizedVenueId);
+    };
+  }, [normalizedVenueId, queryClient]);
   const goBack = () => router.canGoBack() ? router.back() : router.replace("/(main)/explore");
   if (venueQuery.isLoading) return <State loading title="Carregando local" message="Buscando informações deste local." />;
   if (venueQuery.error instanceof ApiError && venueQuery.error.status === 404) return <State title="Local não encontrado" message="Este local não está disponível." action="Voltar" onAction={goBack} />;

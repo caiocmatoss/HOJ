@@ -85,6 +85,11 @@ assert("Explore works globally without nearby radius", explore.includes("useVenu
 assert("Explore does not use nearby endpoint as global search", !explore.includes("/discovery/nearby") && !explore.includes("places-api.foursquare.com"));
 assert("Explore preserves internal venue route", explore.includes("/venue/${venue.id}"));
 assert("Explore preserves internal event route", eventsResource.includes("listEvents") && read("src/features/discovery/EventDetailExperience.tsx").includes("useLocalSearchParams"));
+assert("Explore unifies real venue and event results", explore.includes("visibleVenues") && explore.includes("visibleEvents") && explore.includes('title="Lugares"') && explore.includes('title="Eventos"'));
+assert("Explore has explicit global type filters", explore.includes('"Tudo"') && explore.includes('"Lugares"') && explore.includes('"Eventos"') && explore.includes('filter === "Lugares"') && explore.includes('filter === "Eventos"'));
+assert("Explore query searches both entity types", explore.includes("venueResults") && explore.includes("eventResults") && explore.includes("searchableEvent") && explore.includes("searchableVenue"));
+assert("Explore distinguishes zero results from total error", explore.includes("totalError") && explore.includes("Nenhum resultado para") && explore.includes("Não foi possível carregar"));
+assert("Explore keeps partial source data", explore.includes("venuesQuery.error && eventsQuery.error") && explore.includes("visibleVenues.length") && explore.includes("visibleEvents.length"));
 assert("Nearby radius boundary is inclusive", distance.includes("distanceInMeters <= NEARBY_RADIUS_KM * 1000"));
 assert("Nearby discovery uses backend resource", discoveryResource.includes("/discovery/nearby") && home.includes("useNearbyPlacesQuery"));
 assert("Frontend never calls Foursquare directly", !home.includes("places-api.foursquare.com") && !discoveryResource.includes("foursquare.com"));

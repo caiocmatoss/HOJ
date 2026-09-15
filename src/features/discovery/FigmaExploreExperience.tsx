@@ -13,7 +13,7 @@ import { colors, fonts, radii } from "@/theme/tokens";
 
 type ExploreFilter = "Tudo" | "Lugares" | "Eventos";
 const filters: ExploreFilter[] = ["Tudo", "Lugares", "Eventos"];
-const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const normalize = (value: string | null | undefined) => (value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 const searchableVenue = (venue: ApiVenue) => normalize([venue.name, venue.category, venue.address ?? "", venue.locality ?? ""].join(" "));
 const searchableEvent = (event: ApiEvent) => normalize([event.title, event.category, event.venueName ?? "", event.venue?.name ?? ""].join(" "));
 

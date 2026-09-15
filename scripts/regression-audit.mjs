@@ -35,6 +35,7 @@ const liveMapContainer = read("src/components/home/LiveMapContainer.tsx");
 const packageJson = read("package.json");
 const distance = read("src/utils/distance.ts");
 const discoveryResource = read("src/services/api/resources/discovery.ts");
+const venueDetail = read("src/features/discovery/VenueDetailExperience.tsx");
 const homeSearch = read("src/components/home/figma/FigmaHomeSearch.tsx");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
@@ -88,6 +89,11 @@ assert("Explore preserves internal event route", eventsResource.includes("listEv
 assert("Explore unifies real venue and event results", explore.includes("visibleVenues") && explore.includes("visibleEvents") && explore.includes('title="Lugares"') && explore.includes('title="Eventos"'));
 assert("Explore has explicit global type filters", explore.includes('"Tudo"') && explore.includes('"Lugares"') && explore.includes('"Eventos"') && explore.includes('filter === "Lugares"') && explore.includes('filter === "Eventos"'));
 assert("Explore query searches both entity types", explore.includes("venueResults") && explore.includes("eventResults") && explore.includes("searchableEvent") && explore.includes("searchableVenue"));
+assert("Venue Detail uses API resource and safe route id", venueDetail.includes("useVenueQuery(venueId)") && venueDetail.includes("useLocalSearchParams") && venueDetail.includes("Array.isArray(params.id)"));
+assert("Venue Detail distinguishes not-found", venueDetail.includes("ApiError") && venueDetail.includes("status === 404") && venueDetail.includes("Local não encontrado"));
+assert("Venue Detail favorites are backend-backed", venueDetail.includes("useFavoritesQuery") && venueDetail.includes("useFavoriteMutation"));
+assert("Venue Detail check-in is backend-backed", venueDetail.includes("useActiveCheckinQuery") && venueDetail.includes("useCheckinMutation") && venueDetail.includes("useCheckoutMutation"));
+assert("Venue Detail has no fake presence count", !venueDetail.includes("45 pessoas") && !venueDetail.includes("100 pessoas"));
 assert("Explore distinguishes zero results from total error", explore.includes("totalError") && explore.includes("Nenhum resultado para") && explore.includes("Não foi possível carregar"));
 assert("Explore keeps partial source data", explore.includes("venuesQuery.error && eventsQuery.error") && explore.includes("visibleVenues.length") && explore.includes("visibleEvents.length"));
 assert("Nearby radius boundary is inclusive", distance.includes("distanceInMeters <= NEARBY_RADIUS_KM * 1000"));

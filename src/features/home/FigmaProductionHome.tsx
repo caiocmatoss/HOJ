@@ -45,8 +45,12 @@ export default function FigmaProductionHome() {
   const venues = venuesQuery.data?.items ?? [];
   const favoriteVenueIds = useMemo(() => new Set((favoritesQuery.data ?? []).map((favorite) => favorite.venueId)), [favoritesQuery.data]);
   const events = eventsQuery.data?.items ?? [];
-  const loading = venuesQuery.isLoading || eventsQuery.isLoading || discoveryQuery.isLoading;
-  const error = venuesQuery.error || eventsQuery.error ? "Não foi possível carregar a descoberta." : null;
+  const initialLoading = !venuesQuery.data && !eventsQuery.data && !discoveryQuery.data && (venuesQuery.isLoading || eventsQuery.isLoading || discoveryQuery.isLoading);
+  const backgroundFetching = !initialLoading && (venuesQuery.isFetching || eventsQuery.isFetching || discoveryQuery.isFetching);
+  const locationResolving = latitude == null || longitude == null ? locationStatus === "idle" || locationStatus === "requesting" : false;
+  const loading = initialLoading || locationResolving;
+  void backgroundFetching;
+  const error = venuesQuery.error && venues.length === 0 && eventsQuery.error && events.length === 0 ? "Não foi possível carregar a descoberta." : null;
   const externalPlaces = query.trim() ? [] : (discoveryQuery.data ?? []).filter((place) => place.source === "FOURSQUARE" && !place.venueId);
   const load = () => { void venuesQuery.refetch(); void eventsQuery.refetch(); void discoveryQuery.refetch(); };
   const nearbyFriends = Object.values(friendLocations).filter((friend) => presenceStatuses[friend.userId] === "ONLINE");

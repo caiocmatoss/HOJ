@@ -74,6 +74,9 @@ assert("External places do not expose fake occupancy or rating", !externalPlaceS
 assert("Internal venue favorites stay backend-backed", home.includes("useFavoritesQuery") && home.includes("useFavoriteMutation") && home.includes("favoriteVenueIds"));
 assert("External places have no favorite action", !externalPlaceSheet.includes("favorite") && !externalPlaceSheet.includes("heart"));
 assert("Nearby empty state respects active filter/search", home.includes("Nenhum resultado") && home.includes("selectedCategory") && home.includes("Nenhum ${selectedCategory.toLowerCase()} encontrado"));
+assert("Home distinguishes initial loading from settled empty", home.includes("initialLoading") && home.includes("locationResolving") && home.includes("items.length === 0"));
+assert("Background refetch keeps existing content", home.includes("venuesQuery.isFetching") && home.includes("eventsQuery.isFetching") && home.includes("discoveryQuery.isFetching") && home.includes("initialLoading"));
+assert("Partial source failure preserves healthy data", home.includes("venuesQuery.error && venues.length === 0") && home.includes("eventsQuery.error && events.length === 0"));
 assert("Map does not apply a divergent radius", !realMapWeb.includes("<= 50") && !realMapWeb.includes("slice(0, 20)"));
 assert("Nearby radius boundary is inclusive", distance.includes("distanceInMeters <= NEARBY_RADIUS_KM * 1000"));
 assert("Nearby discovery uses backend resource", discoveryResource.includes("/discovery/nearby") && home.includes("useNearbyPlacesQuery"));

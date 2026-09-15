@@ -36,6 +36,7 @@ const packageJson = read("package.json");
 const distance = read("src/utils/distance.ts");
 const discoveryResource = read("src/services/api/resources/discovery.ts");
 const venueDetail = read("src/features/discovery/VenueDetailExperience.tsx");
+const venuePresenceResource = read("src/services/api/resources/venue-presence.ts");
 const homeSearch = read("src/components/home/figma/FigmaHomeSearch.tsx");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
@@ -93,6 +94,13 @@ assert("Venue Detail uses API resource and safe route id", venueDetail.includes(
 assert("Venue Detail distinguishes not-found", venueDetail.includes("ApiError") && venueDetail.includes("status === 404") && venueDetail.includes("Local não encontrado"));
 assert("Venue Detail favorites are backend-backed", venueDetail.includes("useFavoritesQuery") && venueDetail.includes("useFavoriteMutation"));
 assert("Venue Detail check-in is backend-backed", venueDetail.includes("useActiveCheckinQuery") && venueDetail.includes("useCheckinMutation") && venueDetail.includes("useCheckoutMutation"));
+assert("Venue Detail renders real presence count", venueDetail.includes("presenceCount !== undefined") && venueDetail.includes("pessoas aqui") && venueDetail.includes("presence?.count"));
+assert("Venue Detail preserves zero presence", venueDetail.includes("presenceCount === 1") && !venueDetail.includes("if (presenceCount)"));
+assert("Venue Detail renders friends only when present", venueDetail.includes("friendsPresent.length > 0") && venueDetail.includes("friend.name") && venueDetail.includes("friend.avatar"));
+assert("Venue Detail uses safe presence endpoint", venuePresenceResource.includes("/presence") && venueDetail.includes("useVenuePresenceQuery"));
+assert("Venue presence type excludes private fields", venuePresenceResource.includes("venueId: string") && venuePresenceResource.includes("count: number") && venuePresenceResource.includes("name: string") && venuePresenceResource.includes("avatar: string | null") && !venuePresenceResource.includes("email"));
+assert("Check-in mutations invalidate scoped presence", read("src/services/api/resources/checkins.ts").includes("venuePresenceKeys.detail(venueId)"));
+assert("Venue presence has no polling or socket", !venuePresenceResource.includes("refetchInterval") && !venuePresenceResource.includes("setInterval") && !venueDetail.includes("connectSocket"));
 assert("Venue Detail has no fake presence count", !venueDetail.includes("45 pessoas") && !venueDetail.includes("100 pessoas"));
 assert("Explore distinguishes zero results from total error", explore.includes("totalError") && explore.includes("Nenhum resultado para") && explore.includes("Não foi possível carregar"));
 assert("Explore keeps partial source data", explore.includes("venuesQuery.error && eventsQuery.error") && explore.includes("visibleVenues.length") && explore.includes("visibleEvents.length"));

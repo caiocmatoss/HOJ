@@ -4,6 +4,7 @@ import { type ComponentProps } from "react";
 import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/ui/ScreenContainer";
 import { type ApiEvent } from "@/services/api";
+import { ApiError } from "@/services/api/errors";
 import { useEventQuery } from "@/services/api/resources/events";
 import { useLocationStore } from "@/store/location-store";
 import { colors, fonts, radii } from "@/theme/tokens";
@@ -23,15 +24,17 @@ const router = { ...expoRouter, back: handleEventBack };
 
 export default function EventDetailExperience() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
-  const eventId = Array.isArray(params.id) ? params.id[0] : params.id ?? "";
+  const eventId = (Array.isArray(params.id) ? params.id[0] : params.id)?.trim() ?? "";
   const { latitude, longitude } = useLocationStore();
   const eventQuery = useEventQuery(eventId);
   const event = eventQuery.data ?? null;
   const loading = eventQuery.isLoading;
-  const error = eventQuery.error ? "Não foi possível carregar os detalhes do evento." : null;
+  const notFound = eventQuery.error instanceof ApiError && eventQuery.error.status === 404;
+  const error = eventQuery.error && !notFound ? "Não foi possível carregar os detalhes do evento." : null;
 
   if (loading) return <EventState loading title="Carregando evento" message="Estamos preparando as informações deste evento." />;
-  if (error || !event) return <EventState title="Não foi possível abrir o evento" message={error ?? "Evento não encontrado."} actionLabel={eventId ? "Tentar novamente" : undefined} onAction={eventId ? () => { void eventQuery.refetch(); } : undefined} secondaryActionLabel="Voltar" onSecondaryAction={() => router.back()} tone="danger" />;
+  if (notFound) return <EventState title="Evento não encontrado" message="Este evento não está disponível." secondaryActionLabel="Voltar" onSecondaryAction={() => router.back()} />;
+  if (error || !event) return <EventState title="Não foi possível abrir o evento" message={error ?? "Informe um evento válido para continuar."} actionLabel={eventId ? "Tentar novamente" : undefined} onAction={eventId ? () => { void eventQuery.refetch(); } : undefined} secondaryActionLabel="Voltar" onSecondaryAction={() => router.back()} tone="danger" />;
 
   const venue = event.venue; const venueName = venue?.name ?? event.venueName; const price = formatPrice(event.price); const formattedDate = formatEventDate(event.date); const eventDistance = getEventDistance(event, venue, latitude, longitude);
   const venueCoordinates = venue && Number.isFinite(Number(venue.latitude)) && Number.isFinite(Number(venue.longitude));

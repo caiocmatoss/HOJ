@@ -358,6 +358,8 @@ export type ApiEvent = {
 
   date: string;
   time: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
   category: string;
 
   description: string | null;

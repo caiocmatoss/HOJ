@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNotificationCenterOverlay } from "@/features/navigation/NotificationCenterOverlayContext";
 import { type ApiEvent, type ApiVenue } from "@/services/api";
@@ -17,7 +17,10 @@ const aliases: Record<string, string[]> = { Bar: ["bar"], Restaurante: ["restaur
 export default function FigmaExploreExperience() {
   const { openNotificationCenter } = useNotificationCenterOverlay();
   const latitude = useLocationStore((s) => s.latitude); const longitude = useLocationStore((s) => s.longitude);
-  const [query, setQuery] = useState(""); const [category, setCategory] = useState("Tudo");
+  const params = useLocalSearchParams<{ q?: string | string[] }>();
+  const routeQuery = Array.isArray(params.q) ? params.q[0] ?? "" : params.q ?? "";
+  const [query, setQuery] = useState(routeQuery); const [category, setCategory] = useState("Tudo");
+  useEffect(() => { setQuery(routeQuery); }, [routeQuery]);
   const venuesQuery = useVenuesQuery({ limit: 100, q: query.trim() || undefined });
   const eventsQuery = useEventsQuery();
   const venues = venuesQuery.data?.items ?? []; const events = eventsQuery.data?.items ?? [];

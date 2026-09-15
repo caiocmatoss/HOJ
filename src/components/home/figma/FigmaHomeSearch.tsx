@@ -14,6 +14,7 @@ export function FigmaHomeSearch({ value, onChangeText, onSubmitEditing }: { valu
   const avatarUrl = resolveBackendMediaUrl(avatar);
   const [avatarFailed, setAvatarFailed] = useState(false);
   useEffect(() => setAvatarFailed(false), [avatarUrl]);
+  onSubmitEditing = onSubmitEditing ?? (() => { const term = value.trim(); if (term) router.push({ pathname: "/(main)/explore", params: { q: term } }); });
   return <View testID="home-search" style={styles.search}><Ionicons name="search" size={18} color={colors.textMuted} /><TextInput value={value} onChangeText={onChangeText} onSubmitEditing={onSubmitEditing} placeholder="Onde você quer ir?" placeholderTextColor={colors.textMuted} style={styles.input} returnKeyType="search" /><Pressable accessibilityRole="button" accessibilityLabel="Abrir perfil" onPress={() => router.push("/(main)/profile")}><View style={styles.avatar}>{avatarUrl && !avatarFailed ? <Image onError={() => setAvatarFailed(true)} source={{ uri: avatarUrl }} style={styles.avatarImage} /> : <LinearGradient colors={[colors.brand, colors.brandSecondary]} style={styles.avatar}><Text style={styles.avatarText}>{avatarName.charAt(0).toUpperCase()}</Text></LinearGradient>}</View></Pressable></View>;
 }
 

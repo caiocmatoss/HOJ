@@ -35,6 +35,7 @@ const liveMapContainer = read("src/components/home/LiveMapContainer.tsx");
 const packageJson = read("package.json");
 const distance = read("src/utils/distance.ts");
 const discoveryResource = read("src/services/api/resources/discovery.ts");
+const homeSearch = read("src/components/home/figma/FigmaHomeSearch.tsx");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
 assert("groups is hidden from primary tab bar", /name="groups" options=\{\{ href: null \}\}/.test(tabs));
@@ -78,6 +79,12 @@ assert("Home distinguishes initial loading from settled empty", home.includes("i
 assert("Background refetch keeps existing content", home.includes("venuesQuery.isFetching") && home.includes("eventsQuery.isFetching") && home.includes("discoveryQuery.isFetching") && home.includes("initialLoading"));
 assert("Partial source failure preserves healthy data", home.includes("venuesQuery.error && venues.length === 0") && home.includes("eventsQuery.error && events.length === 0"));
 assert("Map does not apply a divergent radius", !realMapWeb.includes("<= 50") && !realMapWeb.includes("slice(0, 20)"));
+assert("Home search hands off confirmed query to Explore", homeSearch.includes('pathname: "/(main)/explore"') && homeSearch.includes("params: { q: term }") && homeSearch.includes("onSubmitEditing"));
+assert("Explore reads route query safely", explore.includes("useLocalSearchParams") && explore.includes("Array.isArray(params.q)") && explore.includes("routeQuery"));
+assert("Explore works globally without nearby radius", explore.includes("useVenuesQuery") && explore.includes("useEventsQuery") && !explore.includes("useNearbyPlacesQuery") && !explore.includes("NEARBY_RADIUS_KM"));
+assert("Explore does not use nearby endpoint as global search", !explore.includes("/discovery/nearby") && !explore.includes("places-api.foursquare.com"));
+assert("Explore preserves internal venue route", explore.includes("/venue/${venue.id}"));
+assert("Explore preserves internal event route", eventsResource.includes("listEvents") && read("src/features/discovery/EventDetailExperience.tsx").includes("useLocalSearchParams"));
 assert("Nearby radius boundary is inclusive", distance.includes("distanceInMeters <= NEARBY_RADIUS_KM * 1000"));
 assert("Nearby discovery uses backend resource", discoveryResource.includes("/discovery/nearby") && home.includes("useNearbyPlacesQuery"));
 assert("Frontend never calls Foursquare directly", !home.includes("places-api.foursquare.com") && !discoveryResource.includes("foursquare.com"));

@@ -99,6 +99,10 @@ export type LocationUpdatedData = {
   distanceKm?: number;
 };
 
+export type LocationRevokedData = {
+  userId: string;
+};
+
 export type LocationJoinedData = {
   userId: string;
 };
@@ -213,6 +217,10 @@ type ServerToClientEvents = {
 
   "location:updated": (
     data: LocationUpdatedData,
+  ) => void;
+
+  "location:revoked": (
+    data: LocationRevokedData,
   ) => void;
 };
 
@@ -755,11 +763,6 @@ export function connectSocket(): AppSocket {
   socket.on(
     "location:updated",
     (data) => {
-      console.log(
-        "[Socket.IO] location:updated:",
-        data,
-      );
-
       if (
         !data ||
         typeof data.userId !== "string" ||
@@ -771,9 +774,30 @@ export function connectSocket(): AppSocket {
         return;
       }
 
+      const presenceStore = usePresenceStore.getState();
+      const currentUserId = useUserStore.getState().user?.id;
+      if (currentUserId && data.userId === currentUserId) {
+        presenceStore.removeFriendLocation(currentUserId);
+        return;
+      }
+      presenceStore.updateFriendLocation(data);
+    },
+  );
+
+  socket.on(
+    "location:revoked",
+    (data) => {
+      if (
+        !data ||
+        typeof data.userId !== "string" ||
+        !data.userId.trim()
+      ) {
+        return;
+      }
+
       usePresenceStore
         .getState()
-        .updateFriendLocation(data);
+        .removeFriendLocation(data.userId.trim());
     },
   );
 

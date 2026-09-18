@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/services/api/client";
 import type { AuthUser } from "@/services/api/types";
 import { useUserStore } from "@/store/user-store";
+import { usePresenceStore } from "@/store/presence-store";
 
 export type SelfUser = AuthUser;
 export type PublicUser = Omit<SelfUser, "email" | "phone" | "emailVerifiedAt">;
@@ -168,5 +169,14 @@ export function useUpdatePrivacyPreferencesMutation() {
 export function useLocationPreferencesQuery() { return useQuery({ queryKey: profileQueryKeys.locationPreferences, queryFn: getLocationPreferences }); }
 export function useUpdateLocationPreferencesMutation() {
   const client = useQueryClient();
-  return useMutation({ mutationFn: updateLocationPreferences, onSuccess: (value) => client.setQueryData(profileQueryKeys.locationPreferences, value) });
+  return useMutation({
+    mutationFn: updateLocationPreferences,
+    onSuccess: (value) => {
+      client.setQueryData(profileQueryKeys.locationPreferences, value);
+      if (!value.shareWithFriends) {
+        const userId = useUserStore.getState().user?.id;
+        if (userId) usePresenceStore.getState().removeFriendLocation(userId);
+      }
+    },
+  });
 }

@@ -41,6 +41,8 @@ const venuePresenceResource = read("src/services/api/resources/venue-presence.ts
 const venuePresenceQueryKeys = read("src/services/api/query-keys.ts");
 const venuePresenceSocket = read("src/services/socket.ts");
 const homeSearch = read("src/components/home/figma/FigmaHomeSearch.tsx");
+const profileResource = read("src/services/api/resources/profile.ts");
+const presenceStore = read("src/store/presence-store.ts");
 
 assert("six primary tabs", ["home", "explore", "events", "friends", "chat", "profile"].every((key) => tabs.includes(`name="${key}"`)));
 assert("groups is hidden from primary tab bar", /name="groups" options=\{\{ href: null \}\}/.test(tabs));
@@ -147,6 +149,16 @@ assert("socket message listeners expose cleanup", /currentSocket\.off\([\s\S]{0,
 assert("realtime message updates target React Query", groupChat.includes("queryClient.setQueryData") && directChat.includes("queryClient.setQueryData"));
 assert("realtime dedupe uses message ids", groupChat.includes("item.id !== message.id") && directChat.includes("item.id !== message.id"));
 assert("no socket token logging", !socketService.includes("console.log(accessToken") && !socketService.includes("console.log(token"));
+assert("location updates have no sensitive logging", !/location:updated[\s\S]{0,180}console\.(log|info|debug|warn|error)/.test(socketService));
+assert("sharing off reconciles social self cache", profileResource.includes("!value.shareWithFriends") && profileResource.includes("removeFriendLocation") && socketService.includes("removeFriendLocation(currentUserId)"));
+assert("own location is separate from social cache", presenceStore.includes("friendLocations") && socketService.includes("currentUserId && data.userId === currentUserId"));
+assert("no location polling was introduced", !profileResource.includes("refetchInterval") && !socketService.includes("setInterval"));
+assert("location revocation listener is present", socketService.includes('"location:revoked"') && socketService.includes("removeFriendLocation(data.userId.trim())"));
+assert("location revocation validates user id", /location:revoked[\s\S]{0,500}typeof data\.userId !== "string"[\s\S]{0,180}!data\.userId\.trim\(\)/.test(socketService));
+assert("location revocation does not touch own location store", !/location:revoked[\s\S]{0,500}useLocationStore/.test(socketService));
+assert("location revocation is not emitted by frontend", !/location:revoked[\s\S]{0,500}\.emit\(/.test(socketService));
+assert("location revocation has no sensitive logging", !/location:revoked[\s\S]{0,500}console\.(log|info|debug|warn|error)/.test(socketService));
+assert("location updates remain supported after revocation", socketService.includes('"location:updated"') && socketService.includes("updateFriendLocation(data)"));
 assert("refresh is single-flight", apiClient.includes("let refreshFlight") && apiClient.includes("if (!refreshFlight)") && apiClient.includes("refreshFlight = null"));
 assert("refreshed token reauthenticates socket", apiClient.includes("reauthenticateSocket(result.accessToken)") && socketService.includes("export function reauthenticateSocket"));
 assert("socket reauth preserves singleton", socketService.includes("socket.auth") && socketService.includes("socket.disconnect()") && socketService.includes("socket.connect()") && (socketService.match(/socket = io\(/g) ?? []).length === 1);
